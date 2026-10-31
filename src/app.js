@@ -444,6 +444,13 @@ function setFocusMode(open) {
 function appendPage(automatic = false) {
   const previous = book().pages.at(-1), item = newPage(previous?.template || page().template);
   const surface = createPageSurface(item, book().pages.length);
+  // New sheets must inherit the current viewport zoom immediately. Otherwise
+  // an automatically appended sheet briefly uses the CSS fallback width until
+  // the next resize or zoom event.
+  const width = activePaperWidth();
+  surface.slot.querySelector('.paper-wrap').style.width = `${width}px`;
+  surface.slot.querySelector('.page-meta').style.width = `${width}px`;
+  surface.slot.querySelector('.page-meta').style.maxWidth = 'none';
   book().pages.push(item); $('page-stack').append(surface.slot);
   if (eventsBound) { bindDrawingCanvas(surface); watchSurfaceContexts(surface); }
   pageObserver?.observe(surface.slot); renderPages(); renderBooks(); changed();
