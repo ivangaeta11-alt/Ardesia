@@ -268,5 +268,10 @@ body.focus-mode.focus-tools-hidden .writing-toolbar{display:none}
 .selection-actions>button:hover,.selection-color-control:hover{background:#f0edff;border-color:#d4cbfb}
 .selection-color-control{position:relative;display:flex;align-items:center;gap:6px;cursor:pointer}
 .selection-color-control input{width:16px;height:16px;padding:0;border:0;background:transparent;cursor:pointer}
+.ink-context-menu{position:fixed;z-index:95;min-width:145px;padding:5px;background:#fff;border:1px solid #ded8f3;border-radius:10px;box-shadow:0 8px 28px #29234b30;color:#303257}
+.ink-context-menu[hidden]{display:none}
+.ink-context-menu button{display:block;width:100%;padding:8px 11px;border-radius:6px;text-align:left;font-size:11px}
+.ink-context-menu button:hover:not(:disabled){background:#f1eeff;color:#5e3fe0}
+.ink-context-menu button:disabled{opacity:.4;cursor:default}
 @media(max-width:520px){.selection-actions{bottom:calc(48px + env(safe-area-inset-bottom));gap:3px;padding:5px}.selection-actions>span{font-size:9px;padding:0 4px}.selection-actions>button,.selection-color-control{padding:5px 6px;font-size:9px}}
 
