@@ -82,8 +82,7 @@
     <div class="editor-body">
       <aside class="pages-panel" aria-label="Pagine del quaderno"><div class="pages-heading">PAGINE <span id="page-count">01</span></div><div id="pages"></div><button class="add-page" id="add-page" title="Aggiungi pagina"><svg><use href="#i-plus"/></svg><span>Nuova pagina</span></button></aside>
       <section class="canvas-stage" id="stage" aria-label="Area di scrittura">
-        <div class="page-meta" id="page-meta"><span id="page-label">PAGINA 01</span><div><label for="template">Carta</label><select id="template" aria-label="Tipo di carta"><option value="dots">Puntinata</option><option value="ruled">A righe</option><option value="grid">A quadretti</option><option value="blank">Bianca</option></select><button class="icon-button" id="page-menu" aria-label="Opzioni pagina"><svg><use href="#i-more"/></svg></button></div></div>
-        <div id="paper-wrap"><div id="paper"><canvas id="ink" aria-hidden="true"></canvas><canvas id="drawing" aria-label="Foglio: scrivi con la penna o il mouse" tabindex="0"></canvas></div></div>
+        <div id="page-stack" aria-label="Pagine del quaderno"></div>
       </section>
     </div>
     <footer class="status-bar"><div><span class="status-dot"></span><span id="tool-status">Penna, pressione attiva</span><span class="footer-separator">/</span><span id="object-count">0 tratti</span></div><div class="zoom-controls"><button id="toggle-tools" class="icon-button" aria-label="Nascondi strumenti" aria-pressed="false" hidden><svg><use href="#i-menu"/></svg></button><button id="zoom-out" class="icon-button" aria-label="Riduci zoom">−</button><button id="zoom-fit" title="Adatta alla larghezza">Adatta</button><output id="zoom-value">100%</output><button id="zoom-in" class="icon-button" aria-label="Aumenta zoom">+</button><button id="fullscreen" class="icon-button" aria-label="Lavagna a tutto schermo" title="Lavagna a tutto schermo"><svg><use href="#i-expand"/></svg></button></div></footer>
@@ -109,6 +108,7 @@
   <script src="/vendor/paper-core-0.16.0.js"></script>
   <script type="module" src="/src/app.js"></script>
 </body></html>
+
 
 
 
