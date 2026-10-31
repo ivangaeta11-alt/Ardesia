@@ -1,0 +1,10 @@
+{
+  "id": "/", "name": "Ardesia", "short_name": "Ardesia", "lang": "it",
+  "description": "Quaderni digitali per la scrittura a mano, con salvataggio locale e uso offline.",
+  "start_url": "/", "scope": "/", "display": "standalone", "background_color": "#f8f7fc", "theme_color": "#f8f7fc",
+  "icons": [
+    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

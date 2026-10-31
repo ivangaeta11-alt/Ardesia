@@ -1,0 +1,22 @@
+<!doctype html><html lang="it"><meta charset="utf-8"><title>Verifica puntatori Ardesia</title><link rel="stylesheet" href="/styles.css"><style>body{display:block;height:auto;overflow:auto;padding:24px;font:14px system-ui}h1{font-size:22px}.pass{color:#285b4b}.fail{color:#a33}#qa-stage{width:600px;max-width:100%;height:270px;overflow:auto;border:1px solid #ccd8c5}#drawing{display:block;width:794px;height:1123px;background:repeating-linear-gradient(#fffefb 0,#fffefb 31px,#e2e9df 32px)}#results{line-height:1.8}</style><h1>Verifica puntatori Ardesia</h1><ul id="results"></ul><div id="qa-stage"><canvas id="drawing" width="794" height="1123"></canvas></div><div id="cursor-layer" class="cursor-layer" aria-hidden="true" hidden><span class="tool-cursor"><span></span></span></div><script type="module">
+import {ToolCursor} from './src/tool-cursor.js';
+import {restoreToolSizes} from './src/tool-settings.js';
+const layer=document.getElementById('cursor-layer'),surface=document.getElementById('drawing'),stage=document.getElementById('qa-stage');
+const state={tool:'pen',color:'#466baf',sizes:restoreToolSizes(),gesture:null,pointerId:null,blocked:false};
+const cursor=new ToolCursor(layer,surface,stage,()=>state);cursor.refreshGeometry();
+function check(name,ok){const li=document.createElement('li');li.className=ok?'pass':'fail';li.textContent=`${ok?'PASS':'FAIL'} · ${name}`;document.getElementById('results').append(li);if(!ok)document.body.dataset.failed='true';}
+function send(type,options={}){const r=surface.getBoundingClientRect();surface.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerId:7,pointerType:'pen',buttons:0,clientX:r.left+100,clientY:r.top+80,...options}));}
+send('pointerenter');check('Penna in hover: piccolo cerchio colorato',!layer.hidden&&layer.firstElementChild.dataset.mode==='pen'&&parseFloat(layer.firstElementChild.style.width)===4);
+state.gesture='pen';state.pointerId=7;send('pointerdown',{buttons:1});send('pointerrawupdate',{buttons:1});check('Puntatore visibile durante il contatto della penna',!layer.hidden&&surface.dataset.customCursor==='true');
+state.gesture='eraser';send('pointermove',{buttons:32});check('Gomma hardware: cerchio visibile durante la cancellazione',!layer.hidden&&layer.firstElementChild.dataset.mode==='eraser');
+state.sizes.eraser=64;cursor.refresh();check('Diametro della gomma aggiornato indipendentemente dalla penna',parseFloat(layer.firstElementChild.style.width)===64);
+state.gesture=null;state.pointerId=null;send('pointerup',{buttons:0,button:5});check('Dopo il sollevamento ritorna il cerchio della penna',!layer.hidden&&layer.firstElementChild.dataset.mode==='pen');
+state.tool='highlighter';state.color='#d6a341';cursor.refresh();check('Evidenziatore: colore e larghezza coerenti',layer.firstElementChild.dataset.mode==='highlighter'&&parseFloat(layer.firstElementChild.style.width)===10&&layer.firstElementChild.style.getPropertyValue('--cursor-color')==='#d6a341');
+state.tool='eraser';surface.style.width='1588px';surface.style.height='2246px';cursor.refreshGeometry();check('Il diametro della gomma segue lo zoom 2×',parseFloat(layer.firstElementChild.style.width)===128);
+send('pointerleave');check('Nessun puntatore residuo fuori dal foglio',layer.hidden);
+send('pointerenter',{pointerType:'touch',pointerId:9});check('Il tocco non mostra un falso puntatore della penna',layer.hidden);
+state.tool='pen';state.gesture='pen';state.pointerId=7;send('pointerenter',{buttons:1});send('pointermove',{pointerType:'touch',pointerId:9,buttons:1});check('Il palmo non nasconde il puntatore della penna attiva',!layer.hidden);
+state.blocked=true;cursor.refresh();check('Pannelli e dialoghi nascondono il puntatore',layer.hidden);
+state.blocked=false;send('pointermove',{buttons:1});send('pointercancel');check('Interruzione input: puntatore nascosto',layer.hidden);
+document.body.dataset.result=document.body.dataset.failed?'fail':'pass';
+</script></html>

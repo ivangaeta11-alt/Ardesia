@@ -1,0 +1,13 @@
+node_modules/
+dist/
+Ardesia-Netlify/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+*.ardesia
+Ardesia-Windows*.zip
+Anteprima-Ardesia*.jpg
+Correzione-foglio-nero.jpg
+Puntatore-gomma-v1.3.jpg

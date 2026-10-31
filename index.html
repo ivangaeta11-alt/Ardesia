@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f8f7fc"><meta name="description" content="Quaderni digitali per la scrittura a mano, con salvataggio locale e uso offline.">
+  <title>Ardesia</title>
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true"><defs>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-4-4L5 15zM4 20l1-5"/></symbol>
+    <symbol id="i-marker" viewBox="0 0 24 24"><path d="m13 3 8 8-9 9-8-8zM6 14l-3 5 2 2 5-3M14 6l4 4M2 22h10"/></symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m14 3 7 7a2 2 0 0 1 0 3l-7 8H8l-6-6a2 2 0 0 1 0-3L11 3a2 2 0 0 1 3 0zM7 8l10 10M13 21h9"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V5a2 2 0 0 1 4 0v7-9a2 2 0 0 1 4 0v9-7a2 2 0 0 1 4 0v10c0 4-3 7-7 7h-1c-2 0-4-1-5-3l-4-6a2 2 0 0 1 3-2l2 2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 3v18M12 8h4M12 12h4"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="m9 5-6 5 6 5M3 10h11a6 6 0 0 1 0 12"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 5 6 5-6 5M21 10H10a6 6 0 0 0 0 12"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-page" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8zM14 3v5h5M8 13h8M8 17h6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 5M12 17h.01"/></symbol>
+    <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 15V3m-5 5 5-5 5 5M4 15v6h16v-6"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+  </defs></svg>
+  <aside class="sidebar" id="sidebar" aria-label="I tuoi quaderni">
+    <a class="brand" href="/" aria-label="Ardesia, pagina iniziale"><img src="/assets/icon.svg" alt="" width="37" height="37"><span>Ardesia<span class="brand-dot">.</span></span></a>
+    <button class="primary new-book" id="new-book"><svg><use href="#i-plus"/></svg>Nuovo quaderno</button>
+    <div class="section-label">I miei quaderni <span id="book-count">1</span></div>
+    <label class="search"><span aria-hidden="true">⌕</span><input id="search" placeholder="Cerca un quaderno" aria-label="Cerca un quaderno"></label>
+    <nav id="books" aria-label="Quaderni"></nav>
+    <div class="sidebar-bottom">
+      <div class="local-note"><span class="status-dot"></span><div>Archiviazione locale<small>I quaderni restano su questo dispositivo.</small></div></div>
+      <button class="sidebar-link" id="import"><svg><use href="#i-import"/></svg>Importa backup</button>
+      <button class="sidebar-link" id="help"><svg><use href="#i-help"/></svg>Guida <kbd>?</kbd></button>
+      <span class="version">ARDESIA 1.15</span>
+    </div>
+  </aside>
+  <main class="workspace">
+    <header class="document-header">
+      <button class="icon-button mobile-menu" id="toggle-sidebar" aria-label="Apri o chiudi libreria"><svg><use href="#i-menu"/></svg></button>
+      <div class="document-identity"><div class="breadcrumb">I miei quaderni <svg><use href="#i-chevron"/></svg><span id="breadcrumb-title">Il mio primo quaderno</span></div><input id="book-title" aria-label="Titolo del quaderno" maxlength="120" value="Il mio primo quaderno"></div>
+      <div class="header-actions"><span id="save-status" role="status"><span class="status-dot"></span>Salvato sul dispositivo</span><button class="button" id="install" hidden>Installa app</button><button class="button export-button" id="export"><svg><use href="#i-download"/></svg><span>Esporta</span></button><button class="icon-button" id="book-menu" aria-label="Opzioni quaderno"><svg><use href="#i-more"/></svg></button></div>
+    </header>
+    <div class="writing-toolbar" role="toolbar" aria-label="Strumenti di scrittura">
+      <div class="toolbar-group tools">
+        <button class="tool active" data-tool="pen" aria-label="Penna (P)" title="Penna (P)" aria-pressed="true"><svg><use href="#i-pen"/></svg></button>
+        <button class="tool" data-tool="highlighter" aria-label="Evidenziatore (H)" title="Evidenziatore (H)" aria-pressed="false"><svg><use href="#i-marker"/></svg></button>
+        <button class="tool" data-tool="eraser" aria-label="Gomma per tratto (E)" title="Gomma per tratto (E)" aria-pressed="false"><svg><use href="#i-eraser"/></svg></button>
+        <button class="tool" data-tool="text" aria-label="Testo (T)" title="Testo (T)" aria-pressed="false"><span class="text-tool">T</span></button>
+        <button class="tool" data-tool="line" aria-label="Linea (L)" title="Linea (L)" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="m5 19 14-14"/></svg></button>
+        <button class="tool" data-tool="rect" aria-label="Rettangolo (R)" title="Rettangolo (R)" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/></svg></button>
+        <button class="tool" data-tool="hand" aria-label="Sposta foglio (V)" title="Sposta foglio (V)" aria-pressed="false"><svg><use href="#i-hand"/></svg></button>
+      </div>
+      <div class="toolbar-group colors" id="colors" aria-label="Colore inchiostro"></div>
+      <div class="toolbar-group size-control"><button id="size-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="size-panel" title="Dimensione dello strumento"><span id="size-trigger-preview" aria-hidden="true"></span><span id="size-value">2</span><small>px</small><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button></div>
+      <div class="toolbar-group"><button class="button training-open" id="pen-training-open" type="button">Allenamento penna</button></div>
+      <div class="toolbar-group history-tools"><button class="icon-button" id="undo" aria-label="Annulla (Ctrl+Z)" title="Annulla (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button><button class="icon-button" id="redo" aria-label="Ripristina (Ctrl+Y)" title="Ripristina (Ctrl+Y)" disabled><svg><use href="#i-redo"/></svg></button></div>
+      <label class="pen-mode" title="Con Solo penna attivo, il tocco sposta il foglio."><input type="checkbox" id="pen-only" checked><span class="switch"></span><span>Solo penna</span></label>
+    </div>
+    <section id="training-mode-bar" class="training-mode-bar" aria-label="Controlli allenamento penna" hidden>
+      <div><strong id="training-stage">Allenamento</strong><span id="training-instruction">Scrivi sulla lavagna come fai di solito.</span></div>
+      <span id="training-attempt" class="training-attempt"></span>
+      <button class="button" id="training-reference" type="button" hidden>Riprova riferimento</button>
+      <button class="button" id="training-clear" type="button">Pulisci</button>
+      <button class="primary" id="training-finish" type="button">Ho finito</button>
+      <div id="training-rating" class="training-rating-inline" hidden><span id="training-question">Rispetto alla configurazione migliore confermata, com’è stata l’esperienza?</span><div id="training-ratings" class="training-actions"><button class="button" data-rating="worse" type="button">Peggio</button><button class="button" data-rating="same" type="button">Uguale</button><button class="primary" data-rating="better" type="button">Meglio</button></div><div id="training-blind-ratings" class="training-actions" hidden><button class="button" data-blind="first" type="button">Preferisco la prima</button><button class="button" data-blind="same" type="button">Uguali</button><button class="primary" data-blind="second" type="button">Preferisco la seconda</button></div></div>
+      <button class="text-button" id="training-undo" type="button" disabled>Annulla ultimo giudizio</button>
+      <button class="text-button" id="training-reset" type="button">Ripristina iniziale</button>
+      <button class="text-button" id="training-keep" type="button">Mantieni migliore</button>
+      <button class="text-button" id="training-end" type="button">Esci dall’allenamento</button>
+    </section>
+    <div class="editor-body">
+      <aside class="pages-panel" aria-label="Pagine del quaderno"><div class="pages-heading">PAGINE <span id="page-count">01</span></div><div id="pages"></div><button class="add-page" id="add-page" title="Aggiungi pagina"><svg><use href="#i-plus"/></svg><span>Nuova pagina</span></button></aside>
+      <section class="canvas-stage" id="stage" aria-label="Area di scrittura">
+        <div class="page-meta" id="page-meta"><span id="page-label">PAGINA 01</span><div><label for="template">Carta</label><select id="template" aria-label="Tipo di carta"><option value="dots">Puntinata</option><option value="ruled">A righe</option><option value="grid">A quadretti</option><option value="blank">Bianca</option></select><button class="icon-button" id="page-menu" aria-label="Opzioni pagina"><svg><use href="#i-more"/></svg></button></div></div>
+        <div id="paper-wrap"><div id="paper"><canvas id="ink" aria-hidden="true"></canvas><canvas id="drawing" aria-label="Foglio: scrivi con la penna o il mouse" tabindex="0"></canvas></div></div>
+      </section>
+    </div>
+    <footer class="status-bar"><div><span class="status-dot"></span><span id="tool-status">Penna, pressione attiva</span><span class="footer-separator">/</span><span id="object-count">0 tratti</span></div><div class="zoom-controls"><button id="zoom-out" class="icon-button" aria-label="Riduci zoom">−</button><button id="zoom-fit" title="Adatta alla larghezza">Adatta</button><output id="zoom-value">100%</output><button id="zoom-in" class="icon-button" aria-label="Aumenta zoom">+</button><button id="fullscreen" class="icon-button" aria-label="Schermo intero" title="Schermo intero"><svg><use href="#i-expand"/></svg></button></div></footer>
+  </main>
+  <section id="size-panel" class="size-panel" role="dialog" aria-labelledby="size-heading" hidden>
+    <div class="size-panel-heading"><div><span class="eyebrow">IL TUO TRATTO</span><h2 id="size-heading">Spessore penna</h2></div><button class="icon-button" id="size-close" type="button" aria-label="Chiudi dimensioni">×</button></div>
+    <div id="size-preview" aria-hidden="true"><svg viewBox="0 0 260 70"><path d="M20 43 Q45 3 63 32 T106 33 T151 31 T194 33 T240 27"/></svg><span class="eraser-sample"></span></div>
+    <div class="size-value-row"><label id="size-label" for="size-number">Spessore</label><div class="size-number-control"><button id="size-decrease" type="button" aria-label="Riduci dimensione">−</button><input id="size-number" type="number" inputmode="decimal" value="2"><span>px</span><button id="size-increase" type="button" aria-label="Aumenta dimensione">+</button></div></div>
+    <input id="size" type="range" min="0.5" max="12" step="0.05" value="2" aria-label="Spessore penna"><div class="size-range-labels"><span id="size-min">0,5</span><span id="size-max">12 px</span></div>
+    <div id="size-presets" class="size-presets" aria-label="Dimensioni rapide"></div>
+    <p id="size-description">La pressione della penna modula il tratto.</p><small class="size-unit-note">Misure sulla pagina, prima dello zoom.</small>
+  </section>
+  <div id="cursor-layer" class="cursor-layer" aria-hidden="true" hidden><span id="tool-cursor" class="tool-cursor"><span></span></span></div>
+  <div id="toast" role="status" hidden></div>
+  <dialog id="dialog"><form method="dialog" id="dialog-form"><div class="dialog-top"><span class="eyebrow">ARDESIA</span><button value="cancel" class="icon-button" aria-label="Chiudi">×</button></div><div id="dialog-content"></div></form></dialog>
+  <dialog id="pen-training-dialog" class="training-dialog" aria-labelledby="training-title">
+    <div class="training-header"><div><span class="eyebrow">SPERIMENTALE</span><h2 id="training-title">Allenamento penna</h2></div><button class="icon-button" id="training-close" type="button" aria-label="Chiudi allenamento">×</button></div>
+    <div id="training-intro"><p>Proverai configurazioni diverse direttamente sulla lavagna completa: penna, evidenziatore, gomma, pagine, zoom e tutti gli strumenti abituali. Le prove avvengono in un quaderno temporaneo e non toccano i tuoi appunti.</p><button class="primary" id="training-start" type="button">Inizia allenamento</button></div>
+  </dialog>
+  <details id="perf-panel" class="perf-panel" hidden><summary>Profilo prestazioni (diagnostica locale)</summary><div class="perf-grid"><div><span>Frame ms</span><output id="perf-frameMs">N/D</output></div><div><span>renderPaper ms</span><output id="perf-paperRenderMs">N/D</output></div><div><span>drawObject calls</span><output id="perf-drawObjectCalls">N/D</output></div><div><span>Oggetti per renderPaper</span><output id="perf-objectsDrawn">N/D</output></div><div><span>Segmenti geometrici costruiti</span><output id="perf-geometrySegments">N/D</output></div><div><span>Copie Path2D</span><output id="perf-pathCopies">N/D</output></div><div><span>Riallocazioni Canvas</span><output id="perf-canvasResizeCount">N/D</output></div><div><span>Pixel Canvas riallocati</span><output id="perf-canvasPixels">N/D</output></div><div><span id="perf-state">Pronto</span></div></div><div class="perf-actions"><button class="button" id="perf-start" type="button">Avvia misura</button><button class="button" id="perf-stop" type="button">Termina misura</button></div></details>
+  <input type="file" id="import-file" accept="application/json,.json,.ardesia" hidden>
+  <div id="print-pages"></div>
+  <script src="/vendor/paper-core-0.16.0.js"></script>
+  <script type="module" src="/src/app.js"></script>
+</body></html>
+
+
+
+

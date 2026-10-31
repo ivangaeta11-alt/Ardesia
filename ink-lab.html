@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#285b4b"><meta name="description" content="Laboratorio di sperimentazione del tratto e della scrittura a mano.">
+  <title>Ink Lab — Ardesia</title>
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/src/ink-lab.css">
+</head>
+<body class="ink-lab-body">
+  <header class="lab-header"><a class="brand" href="/" aria-label="Torna ad Ardesia"><img src="/assets/icon.svg" alt="" width="34" height="34"><span>ardesia<span class="brand-dot">.</span></span></a><div><span class="eyebrow">AMBIENTE SPERIMENTALE</span><h1>Ink Lab</h1></div><a class="button" href="/">Torna alla lavagna</a></header>
+  <main class="lab-layout">
+    <section class="lab-work" aria-label="Prova di scrittura e confronto">
+      <div class="lab-card capture-card"><div class="lab-card-head"><div><h2>Sessione di scrittura</h2><p>Scrivi liberamente: ogni tratto resta indipendente e viene ricalcolato con A e B.</p></div><button class="button" id="lab-new-session" type="button">Nuova sessione</button></div>
+        <div class="session-controls"><label for="session-name">Nome</label><input id="session-name" maxlength="80" value="Prova senza titolo"><button class="button" id="session-save" type="button">Salva sessione</button><label for="session-list">Salvate</label><select id="session-list"><option value="">Sessioni salvate…</option></select><button class="button" id="session-load" type="button" disabled>Carica</button></div>
+        <div class="ink-board-toolbar" role="toolbar" aria-label="Strumenti della sessione"><div class="board-tool-set"><button class="board-tool active" id="mode-pen" type="button" aria-pressed="true" title="Scrivi">Penna</button><button class="board-tool" id="mode-eraser" type="button" aria-pressed="false" title="Cancella i tratti toccati">Gomma</button><button class="board-tool" id="mode-hand" type="button" aria-pressed="false" title="Sposta la vista">Sposta</button></div><div class="board-tool-set"><button class="board-icon" id="session-undo" type="button" aria-label="Annulla" title="Annulla" disabled>↶</button><button class="board-icon" id="session-redo" type="button" aria-label="Ripeti" title="Ripeti" disabled>↷</button><span class="board-divider"></span><button class="board-icon" id="session-zoom-out" type="button" aria-label="Riduci zoom">−</button><output id="session-zoom">100%</output><button class="board-icon" id="session-zoom-in" type="button" aria-label="Aumenta zoom">＋</button><button class="board-fit" id="session-fit" type="button">Adatta</button></div><label class="eraser-size">Gomma <input id="eraser-size" type="range" min="8" max="64" step="1" value="24"><output id="eraser-size-value">24 px</output></label><button class="button" id="session-import" type="button">Importa JSON</button><button class="button" id="lab-export-raw" type="button">Esporta sessione</button><input id="session-file" type="file" accept="application/json,.json" hidden></div>
+        <div class="capture-wrap" id="capture-wrap"><canvas id="capture" aria-label="Lavagna Ink Lab: scrivi formule e testo con la penna" tabindex="0"></canvas><span id="capture-hint">Scrivi qui con la penna</span><span id="eraser-cursor" hidden></span></div>
+        <div class="lab-suggestions"><label for="writing-test">Prova suggerita</label><select id="writing-test"><option value="">Scegli una prova…</option><option>Lettere minuscole in corsivo</option><option>Numeri e simboli matematici</option><option>Apici e pedici</option><option>Integrali e sommatorie</option><option>Frazioni</option><option>Curve veloci</option><option>Segmenti e angoli netti</option></select><small id="test-prompt">Le prove suggerite sono promemoria; la lavagna mantiene tutti i tratti della sessione.</small></div></div>
+      <div class="comparison-heading"><div><span class="eyebrow">STESSA SESSIONE · STESSI CAMPIONI GREZZI · STESSA GEOMETRIA</span><h2>Confronto A / B</h2></div><span id="trace-status" role="status">In attesa di una sessione</span></div>
+      <div class="comparison-grid"><article class="lab-card compare-card"><header><strong>Configurazione A</strong><span id="compare-label-a">Predefinita</span></header><canvas id="compare-a" aria-label="Traccia rielaborata con configurazione A"></canvas></article><article class="lab-card compare-card"><header><strong>Configurazione B</strong><span id="compare-label-b">Predefinita</span></header><canvas id="compare-b" aria-label="Traccia rielaborata con configurazione B"></canvas></article></div>
+      <details class="diagnostics" open><summary>Diagnostica della sessione e del rendering</summary><div class="diag-grid"><div><span>Campioni grezzi sessione</span><strong id="diag-samples">0</strong><small>conteggio effettivo, tutti i tratti</small></div><div><span>Frequenza acquisita</span><strong id="diag-rate">—</strong><small>timestamp dell'ultimo tratto</small></div><div><span>Campioni coalescenti</span><strong id="diag-coalesced">—</strong><small>conteggio effettivo della sessione</small></div><div><span>Pre-elaborazione A / B</span><strong id="diag-process">—</strong><small>separata dove l'adapter lo consente</small></div><div><span>Render o replay A / B</span><strong id="diag-render">—</strong><small>Signature Pad include qui il calcolo; CPU, esclusa GPU/display</small></div><div><span>Campioni scartati</span><strong id="diag-dropped">0</strong><small>conteggio esatto / lacune stimate</small></div></div></details>
+    </section>
+    <aside class="lab-panel" aria-label="Impostazioni algoritmi">
+      <div class="lab-card panel-card"><div class="panel-title"><div><span class="eyebrow">CONFIGURAZIONI</span><h2>Algoritmi del tratto</h2></div><button id="lab-reset" class="text-button" type="button">Ripristina predefiniti</button></div>
+        <div class="ab-tabs" role="tablist" aria-label="Configurazione da modificare"><button id="tab-a" role="tab" aria-selected="true" aria-controls="config-controls">A</button><button id="tab-b" role="tab" aria-selected="false" aria-controls="config-controls">B</button></div>
+        <div class="preset-row"><label for="preset-select">Preset</label><select id="preset-select"><option value="">Configurazione corrente</option></select><button id="preset-save" class="icon-button" type="button" title="Salva configurazione">＋</button><button id="preset-rename" class="icon-button" type="button" title="Rinomina preset" disabled>✎</button></div>
+        <div class="preset-row apply-row"><button id="copy-config" class="button" type="button">Copia A → B</button><button id="apply-config" class="primary" type="button">Applica alla lavagna</button></div>
+        <p class="apply-note">L'applicazione alla lavagna salva la configurazione per i nuovi tratti; i tratti esistenti restano invariati.</p>
+        <div class="preset-row engine-row"><label for="engine-select">Motore</label><select id="engine-select"><option value="cosastudio">CosaStudio</option><option value="signature-pad">Signature Pad</option><option value="paperjs">Paper.js</option></select></div><p class="engine-note" id="engine-note"></p><div id="config-controls"></div>
+      </div>
+    </aside>
+  </main>
+  <div id="lab-toast" role="status" hidden></div>
+  <script src="/vendor/paper-core-0.16.0.js"></script><script type="module" src="/src/ink-lab-session-v2.js"></script>
+</body></html>
+
+
+

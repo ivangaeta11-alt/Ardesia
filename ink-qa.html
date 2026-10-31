@@ -1,0 +1,72 @@
+<!doctype html><html lang="it"><meta charset="utf-8"><title>Verifica motore Ardesia</title><style>body{font:16px system-ui;margin:24px}canvas{border:1px solid #ccc;max-width:100%}.pass{color:#285b4b}.fail{color:#a33}</style><h1>Verifica motore Ardesia</h1><ul id="results"></ul><canvas id="example" width="800" height="380"></canvas><script type="module">
+import {drawObject,hitsObject} from './src/core.js';
+import {INK_VERSION,smoothCenterline} from './src/ink.js';
+import {LiveInkRenderer} from './src/live-ink.js';
+import {PenPreview} from './src/pen-preview.js';
+const results=document.getElementById('results');
+function check(name,condition,details=''){const li=document.createElement('li');li.className=condition?'pass':'fail';li.textContent=`${condition?'PASS':'FAIL'} · ${name} ${details}`;results.append(li);if(!condition)document.body.dataset.failed='true';}
+const fixture={type:'pen',size:6,color:'#253a36',inkVersion:INK_VERSION,points:Array.from({length:180},(_,i)=>({x:30+i*3.7,y:130+60*Math.sin(i*.12),p:.2+.6*(1+Math.sin(i*.06))/2}))};
+const fresh=()=>{const c=document.createElement('canvas');c.width=800;c.height=380;return c;};
+const a=fresh(),b=fresh(),ac=a.getContext('2d'),bc=b.getContext('2d');
+const live=structuredClone(fixture);live.points=[];
+for(const point of fixture.points){live.points.push(point);ac.clearRect(0,0,800,380);drawObject(ac,live);}
+drawObject(bc,fixture);
+const ap=ac.getImageData(0,0,800,380).data,bp=bc.getImageData(0,0,800,380).data;
+check('Aspetto identico durante il tratto e dopo ricaricamento/esportazione',ap.every((v,i)=>v===bp[i]));
+const center=smoothCenterline(fixture);
+check('Copertura continua della curva, senza buchi',center.every(p=>ap[(Math.round(p.y)*800+Math.round(p.x))*4+3]>200));
+check('La gomma segue la curva visibile',center.every(p=>hitsObject(fixture,p,p,.2)));
+const marker={...structuredClone(fixture),type:'highlighter',size:3};
+bc.clearRect(0,0,800,380);drawObject(bc,marker);
+const alpha=bc.getImageData(0,0,800,380).data.filter((_,i)=>i%4===3);
+check('Evidenziatore senza accumulo di opacità alle giunture',alpha.reduce((max,v)=>Math.max(max,v),0)<=72);
+const pressureDot={...fixture,points:[{x:50,y:50,p:0}],size:.5};
+bc.clearRect(0,0,800,380);drawObject(bc,pressureDot);
+check('Punto sottile a pressione minima disegnabile',bc.getImageData(49,49,3,3).data.some((v,i)=>i%4===3&&v>0));
+const long={...fixture,size:2,points:Array.from({length:2000},(_,i)=>({x:20+i*.36,y:250+60*Math.sin(i*.02),p:.5}))};
+drawObject(ac,long);const times=[];
+for(let i=0;i<30;i++){long.points.push({x:740+i*.5,y:250+Math.sin(i*.02)*60,p:.5});const start=performance.now();ac.clearRect(0,0,800,380);drawObject(ac,long);times.push(performance.now()-start);}
+times.sort((x,y)=>x-y);check('Ridisegno di un tratto lungo completato',true,`p95 CPU: ${times[28].toFixed(2)} ms, 2030 campioni (misura locale, esclusa composizione GPU)`);
+document.getElementById('example').getContext('2d').drawImage(a,0,0);
+// Native AA coverage can differ between a small clipped path and a complex
+// full path. Verify the geometric envelope and opaque interiors, not RGB values
+// in nearly transparent edge pixels (which are unstable after unpremultiplying).
+function compare(left,right){
+ const a=left.getContext('2d').getImageData(0,0,left.width,left.height).data,b=right.getContext('2d').getImageData(0,0,right.width,right.height).data;
+ let alphaMax=0,envelopeErrors=0,interiorErrors=0;
+ for(let i=3;i<a.length;i+=4){const delta=Math.abs(a[i]-b[i]);alphaMax=Math.max(alphaMax,delta);if(delta<=2)continue;
+ const pixel=(i-3)/4,x=pixel%left.width,y=Math.floor(pixel/left.width);let maxA=0,maxB=0,minA=255,minB=255;
+ for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){const xx=x+ox,yy=y+oy;if(xx<0||xx>=left.width||yy<0||yy>=left.height)continue;const at=(yy*left.width+xx)*4+3;maxA=Math.max(maxA,a[at]);maxB=Math.max(maxB,b[at]);minA=Math.min(minA,a[at]);minB=Math.min(minB,b[at]);}
+ if((a[i]>8&&maxB<=8)||(b[i]>8&&maxA<=8))envelopeErrors++;
+ if((minA>=250&&b[i]<245)||(minB>=250&&a[i]<245))interiorErrors++;
+ }
+ return {alphaMax,envelopeErrors,interiorErrors};
+}
+for(const type of ['pen','highlighter'])for(const scale of [1,2]){
+  const actual=fresh(),expected=fresh();for(const c of [actual,expected]){c.width=800*scale;c.height=380*scale;}
+  const renderer=new LiveInkRenderer(actual.getContext('2d'));renderer.setScale(scale,scale);
+  const object={...structuredClone(fixture),type,size:type==='pen'?3:2,points:[]};
+  for(const point of fixture.points){object.points.push(point);renderer.render(object,object.points.length%7===0?[{...point,x:point.x+8}]:[]);}
+  renderer.render(object,[]);const ec=expected.getContext('2d');ec.scale(scale,scale);drawObject(ec,object);
+  const diff=compare(actual,expected);check(`Rendering locale e rimozione anteprima: ${type}, scala ${scale}`,diff.envelopeErrors===0&&diff.interiorErrors===0,JSON.stringify(diff));
+  renderer.render(null);check(`Fine tratto: nessun residuo di anteprima (${type}, ${scale})`,actual.getContext('2d').getImageData(0,0,actual.width,actual.height).data.every((v,i)=>i%4!==3||v===0));
+}
+{
+ const scale=1.5,actual=fresh(),expected=fresh();for(const c of [actual,expected]){c.width=800*scale;c.height=380*scale;}
+ const renderer=new LiveInkRenderer(actual.getContext('2d'));renderer.setScale(scale,scale);
+ const object={...fixture,size:4,points:[]};
+ for(let i=0;i<140;i++){const t=i/139*Math.PI*2;object.points.push({x:400+180*Math.sin(t),y:180+90*Math.sin(t*2),p:.5});renderer.render(object,i%5===0?[{...object.points.at(-1),x:object.points.at(-1).x+8}]:[]);}
+ renderer.render(object,[]);const c=expected.getContext('2d');c.scale(scale,scale);drawObject(c,object);const diff=compare(actual,expected);
+ check('Incroci e cancellazione anticipo a densità 1,5×',diff.envelopeErrors===0&&diff.interiorErrors===0,JSON.stringify(diff));
+}
+// Match the old full-stroke renderer and new local renderer on identical input.
+for(const count of [2000,8000]){
+  const full=fresh(),local=fresh(),fc=full.getContext('2d'),renderer=new LiveInkRenderer(local.getContext('2d'));
+  const points=Array.from({length:count},(_,i)=>({x:20+(i%1200)*.6,y:35+Math.floor(i/1200)*40+Math.sin(i*.03)*5,p:.5}));
+  const object={...fixture,size:2,points};drawObject(fc,object);renderer.render(object);const oldTimes=[],newTimes=[];let work;
+  for(let i=0;i<40;i++){const k=count+i;object.points.push({x:20+k%1200*.6,y:35+Math.floor(k/1200)*40+Math.sin(k*.03)*5,p:.5});let start=performance.now();fc.clearRect(0,0,800,380);drawObject(fc,object);oldTimes.push(performance.now()-start);start=performance.now();work=renderer.render(object);newTimes.push(performance.now()-start);}
+  oldTimes.sort((a,b)=>a-b);newTimes.sort((a,b)=>a-b);check(`Confronto rendering ${count} campioni`,true,`p95 CPU completo ${oldTimes[37].toFixed(2)} ms; locale ${newTimes[37].toFixed(2)} ms; pezzi ${work.pieces}; area ${work.area.toFixed(1)} px² logici (esclusa composizione GPU)`);
+}
+const predictor=new PenPreview();const confirmed=[{x:20,y:20,p:.5},{x:24,y:20,p:.5},{x:28,y:20,p:.5}];confirmed.forEach((p,i)=>predictor.add(p,i*4));const before=JSON.stringify(confirmed);predictor.points(confirmed.at(-1),8);check('Predizione esclusa dai campioni confermati',JSON.stringify(confirmed)===before);
+document.body.dataset.result=document.body.dataset.failed?'fail':'pass';
+</script></html>
