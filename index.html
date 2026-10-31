@@ -12,6 +12,7 @@
     <symbol id="i-marker" viewBox="0 0 24 24"><path d="m13 3 8 8-9 9-8-8zM6 14l-3 5 2 2 5-3M14 6l4 4M2 22h10"/></symbol>
     <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m14 3 7 7a2 2 0 0 1 0 3l-7 8H8l-6-6a2 2 0 0 1 0-3L11 3a2 2 0 0 1 3 0zM7 8l10 10M13 21h9"/></symbol>
     <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V5a2 2 0 0 1 4 0v7-9a2 2 0 0 1 4 0v9-7a2 2 0 0 1 4 0v10c0 4-3 7-7 7h-1c-2 0-4-1-5-3l-4-6a2 2 0 0 1 3-2l2 2"/></symbol>
+    <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3v17l4.5-4.2 3.2 5.2 3-1.8-3.2-5.1H19z"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-book" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 3v18M12 8h4M12 12h4"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
@@ -60,6 +61,7 @@
         <button class="tool" data-tool="line" aria-label="Linea (L)" title="Linea (L)" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="m5 19 14-14"/></svg></button>
         <button class="tool" data-tool="rect" aria-label="Rettangolo (R)" title="Rettangolo (R)" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/></svg></button>
         <button class="tool" data-tool="hand" aria-label="Sposta foglio (V)" title="Sposta foglio (V)" aria-pressed="false"><svg><use href="#i-hand"/></svg></button>
+        <button class="tool" data-tool="select" aria-label="Seleziona tratti (S)" title="Seleziona tratti (S)" aria-pressed="false"><svg><use href="#i-select"/></svg></button>
       </div>
       <div class="toolbar-group colors" id="colors" aria-label="Colore inchiostro"></div>
       <div class="toolbar-group size-control"><button id="size-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="size-panel" title="Dimensione dello strumento"><span id="size-trigger-preview" aria-hidden="true"></span><span id="size-value">2</span><small>px</small><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button></div>
@@ -87,6 +89,13 @@
     </div>
     <footer class="status-bar"><div><span class="status-dot"></span><span id="tool-status">Penna, pressione attiva</span><span class="footer-separator">/</span><span id="object-count">0 tratti</span></div><div class="zoom-controls"><button id="toggle-tools" class="icon-button" aria-label="Nascondi strumenti" aria-pressed="false" hidden><svg><use href="#i-menu"/></svg></button><button id="zoom-out" class="icon-button" aria-label="Riduci zoom">−</button><button id="zoom-fit" title="Adatta alla larghezza">Adatta</button><output id="zoom-value">100%</output><button id="zoom-in" class="icon-button" aria-label="Aumenta zoom">+</button><button id="fullscreen" class="icon-button" aria-label="Visualizzazione pagina intera" title="Visualizzazione pagina intera"><svg><use href="#i-expand"/></svg></button></div></footer>
   </main>
+  <div id="selection-actions" class="selection-actions" role="toolbar" aria-label="Azioni sui tratti selezionati" hidden>
+    <span id="selection-count">0 tratti selezionati</span>
+    <button type="button" data-selection-action="duplicate">Duplica</button>
+    <label class="selection-color-control" title="Cambia colore dei tratti selezionati">Colore<input id="selection-color" type="color" value="#253a36" aria-label="Colore dei tratti selezionati"></label>
+    <button type="button" data-selection-action="delete">Elimina</button>
+    <button type="button" data-selection-action="clear" aria-label="Deseleziona">×</button>
+  </div>
   <section id="size-panel" class="size-panel" role="dialog" aria-labelledby="size-heading" hidden>
     <div class="size-panel-heading"><div><span class="eyebrow">IL TUO TRATTO</span><h2 id="size-heading">Spessore penna</h2></div><button class="icon-button" id="size-close" type="button" aria-label="Chiudi dimensioni">×</button></div>
     <div id="size-preview" aria-hidden="true"><svg viewBox="0 0 260 70"><path d="M20 43 Q45 3 63 32 T106 33 T151 31 T194 33 T240 27"/></svg><span class="eraser-sample"></span></div>
