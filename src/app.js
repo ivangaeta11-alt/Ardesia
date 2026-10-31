@@ -196,8 +196,11 @@ function updateSelectionUI() {
 }
 function translateObject(object, dx, dy) {
   if (object.type === 'text') { object.x += dx; object.y += dy; return; }
-  for (const p of object.points || []) { p.x += dx; p.y += dy; }
-  for (const p of object.rawPoints || []) { p.x += dx; p.y += dy; }
+  // Replace the point arrays so the stroke renderer invalidates its geometry
+  // caches. Mutating point objects in place leaves cached Path2D geometry at
+  // the old position even though the selection outline has moved.
+  object.points = (object.points || []).map(p => ({ ...p, x: p.x + dx, y: p.y + dy }));
+  if (object.rawPoints) object.rawPoints = object.rawPoints.map(p => ({ ...p, x: p.x + dx, y: p.y + dy }));
 }
 function selectionAction(action, value) {
   if (!selection.size) return;
