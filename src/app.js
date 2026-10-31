@@ -439,8 +439,8 @@ function setFocusMode(open) {
   $('toggle-tools').setAttribute('aria-pressed', 'false');
   $('toggle-tools').setAttribute('aria-label', 'Nascondi strumenti');
   $('fullscreen').setAttribute('aria-pressed', String(open));
-  $('fullscreen').setAttribute('aria-label', open ? 'Esci dalla lavagna a tutto schermo' : 'Lavagna a tutto schermo');
-  $('fullscreen').title = open ? 'Esci dalla lavagna a tutto schermo' : 'Lavagna a tutto schermo';
+  $('fullscreen').setAttribute('aria-label', open ? 'Esci dalla visualizzazione pagina intera' : 'Visualizzazione pagina intera');
+  $('fullscreen').title = open ? 'Esci dalla visualizzazione pagina intera' : 'Visualizzazione pagina intera';
   $('fullscreen').querySelector('use').setAttribute('href', open ? '#i-collapse' : '#i-expand');
   requestAnimationFrame(() => { resizePage(); toolCursor?.refreshGeometry(); });
 }
@@ -522,15 +522,7 @@ function bindEvents() {
   $('stage').addEventListener('pointerup', endPinchPointer, { capture: true });
   $('stage').addEventListener('pointercancel', endPinchPointer, { capture: true });
   $('zoom-out').onclick = () => setZoom(-.1); $('zoom-in').onclick = () => setZoom(.1); $('zoom-fit').onclick = () => { endGesture(); fit = true; resizePage(); };
-  $('fullscreen').onclick = async () => {
-    const entering = !document.body.classList.contains('focus-mode');
-    setFocusMode(entering);
-    try {
-      if (entering && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-      else if (!entering && document.fullscreenElement) await document.exitFullscreen();
-    } catch { /* La modalità lavagna resta disponibile anche senza fullscreen nativo. */ }
-  };
-  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('focus-mode')) setFocusMode(false); });
+  $('fullscreen').onclick = () => setFocusMode(!document.body.classList.contains('focus-mode'));
   $('toggle-tools').onclick = () => {
     const hidden = !document.body.classList.contains('focus-tools-hidden');
     document.body.classList.toggle('focus-tools-hidden', hidden);
