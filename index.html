@@ -91,10 +91,20 @@
   </main>
   <div id="selection-actions" class="selection-actions" role="toolbar" aria-label="Azioni sui tratti selezionati" hidden>
     <span id="selection-count">0 tratti selezionati</span>
+    <button id="selection-edit-text" type="button" data-selection-action="edit-text" hidden>Modifica testo</button>
+    <button type="button" data-selection-action="copy">Copia</button>
+    <button type="button" data-selection-action="cut">Taglia</button>
     <button type="button" data-selection-action="duplicate">Duplica</button>
     <label class="selection-color-control" title="Cambia colore dei tratti selezionati">Colore<input id="selection-color" type="color" value="#253a36" aria-label="Colore dei tratti selezionati"></label>
     <button type="button" data-selection-action="delete">Elimina</button>
     <button type="button" data-selection-action="clear" aria-label="Deseleziona">×</button>
+  </div>
+  <div id="ink-context-menu" class="ink-context-menu" role="menu" aria-label="Azioni sui tratti" hidden>
+    <button type="button" role="menuitem" data-ink-action="edit-text" hidden>Modifica testo</button>
+    <button type="button" role="menuitem" data-ink-action="copy">Copia</button>
+    <button type="button" role="menuitem" data-ink-action="cut">Taglia</button>
+    <button type="button" role="menuitem" data-ink-action="paste">Incolla</button>
+    <button type="button" role="menuitem" data-ink-action="delete">Elimina</button>
   </div>
   <section id="size-panel" class="size-panel" role="dialog" aria-labelledby="size-heading" hidden>
     <div class="size-panel-heading"><div><span class="eyebrow">IL TUO TRATTO</span><h2 id="size-heading">Spessore penna</h2></div><button class="icon-button" id="size-close" type="button" aria-label="Chiudi dimensioni">×</button></div>
