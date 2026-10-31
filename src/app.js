@@ -22,8 +22,9 @@ let pinchZoom = null;
 let storageReady = false, revision = 0, raster = canvasResolution(PAGE_W, devicePixelRatio, PAGE_W, PAGE_H), textPosition, zoomRasterTimer;
 // Keep both layers in the browser's normal compositor. A desynchronized,
 // transparent overlay can be presented as black by some Windows GPU paths.
-let ink, drawing, ctx, live, liveRenderer, activeSurfaceId = null, pageObserver = null, eventsBound = false, lastPageScrollTop = 0, autoPagePending = false;
+let ink, drawing, selectionCanvas, ctx, live, liveRenderer, activeSurfaceId = null, pageObserver = null, eventsBound = false, lastPageScrollTop = 0, autoPagePending = false;
 const pageSurfaces = new Map();
+let selection = new Set(), selectionRenderFrame = 0;
 const rawInput = 'onpointerrawupdate' in window;
 let lastLivePaint = -Infinity;
 let penTraining;
@@ -84,12 +85,12 @@ function updatePageInfo() {
   updateHistory();
 }
 function pageSlotMarkup(item, index) {
-  return `<div class="page-meta"><span class="page-label">PAGINA ${String(index + 1).padStart(2, '0')}</span><div><label>Carta</label><select class="page-template" aria-label="Tipo di carta, pagina ${index + 1}"><option value="dots" ${item.template === 'dots' ? 'selected' : ''}>Puntinata</option><option value="ruled" ${item.template === 'ruled' ? 'selected' : ''}>A righe</option><option value="grid" ${item.template === 'grid' ? 'selected' : ''}>A quadretti</option><option value="blank" ${item.template === 'blank' ? 'selected' : ''}>Bianca</option></select><button class="icon-button" data-page-menu="${esc(item.id)}" aria-label="Opzioni pagina ${index + 1}"><svg><use href="#i-more"/></svg></button></div></div><div class="paper-wrap"><div class="paper"><canvas class="ink-canvas" aria-hidden="true"></canvas><canvas class="drawing-canvas" aria-label="Foglio ${index + 1}: scrivi con la penna o il mouse" tabindex="0"></canvas></div></div>`;
+  return `<div class="page-meta"><span class="page-label">PAGINA ${String(index + 1).padStart(2, '0')}</span><div><label>Carta</label><select class="page-template" aria-label="Tipo di carta, pagina ${index + 1}"><option value="dots" ${item.template === 'dots' ? 'selected' : ''}>Puntinata</option><option value="ruled" ${item.template === 'ruled' ? 'selected' : ''}>A righe</option><option value="grid" ${item.template === 'grid' ? 'selected' : ''}>A quadretti</option><option value="blank" ${item.template === 'blank' ? 'selected' : ''}>Bianca</option></select><button class="icon-button" data-page-menu="${esc(item.id)}" aria-label="Opzioni pagina ${index + 1}"><svg><use href="#i-more"/></svg></button></div></div><div class="paper-wrap"><div class="paper"><canvas class="ink-canvas" aria-hidden="true"></canvas><canvas class="selection-canvas" aria-hidden="true"></canvas><canvas class="drawing-canvas" aria-label="Foglio ${index + 1}: scrivi con la penna o il mouse" tabindex="0"></canvas></div></div>`;
 }
 function createPageSurface(item, index) {
   const slot = document.createElement('article'); slot.className = 'page-slot'; slot.dataset.pageId = item.id; slot.innerHTML = pageSlotMarkup(item, index);
-  const surface = { id: item.id, model: item, slot, ink: slot.querySelector('.ink-canvas'), drawing: slot.querySelector('.drawing-canvas'), raster: null, rendered: false };
-  surface.ink.width = surface.ink.height = surface.drawing.width = surface.drawing.height = 1;
+  const surface = { id: item.id, model: item, slot, ink: slot.querySelector('.ink-canvas'), selection: slot.querySelector('.selection-canvas'), drawing: slot.querySelector('.drawing-canvas'), raster: null, rendered: false };
+  surface.ink.width = surface.ink.height = surface.selection.width = surface.selection.height = surface.drawing.width = surface.drawing.height = 1;
   pageSurfaces.set(item.id, surface); return surface;
 }
 function renderStaticPage(surface, cssWidth) {
@@ -98,22 +99,22 @@ function renderStaticPage(surface, cssWidth) {
   const next = canvasResolution(width, devicePixelRatio, PAGE_W, PAGE_H);
   if (surface.rendered && surface.raster?.width === next.width && surface.raster?.height === next.height) { surface.drawing.width = surface.drawing.height = 1; return; }
   if (surface.ink.width !== next.width || surface.ink.height !== next.height) { surface.ink.width = next.width; surface.ink.height = next.height; }
-  surface.drawing.width = surface.drawing.height = 1;
+  surface.selection.width = surface.selection.height = surface.drawing.width = surface.drawing.height = 1;
   const target = surface.model, c = surface.ink.getContext('2d', { alpha: false });
   c.setTransform(next.x, 0, 0, next.y, 0, 0); c.clearRect(0, 0, PAGE_W, PAGE_H); drawPaper(c, target.template); target.objects.forEach(object => drawObject(c, object));
   surface.raster = next; surface.rendered = true;
 }
 function releaseStaticPage(surface) {
   if (!surface || surface.id === activeSurfaceId) return;
-  surface.ink.width = surface.ink.height = surface.drawing.width = surface.drawing.height = 1; surface.raster = null; surface.rendered = false;
+  surface.ink.width = surface.ink.height = surface.selection.width = surface.selection.height = surface.drawing.width = surface.drawing.height = 1; surface.raster = null; surface.rendered = false;
 }
 function setActiveSurface(id) {
   if (activeSurfaceId === id) return false;
   const next = pageSurfaces.get(id); if (!next) return false;
   endGesture(); toolCursor?.destroy(); toolCursor = null;
   const previous = pageSurfaces.get(activeSurfaceId);
-  if (previous) { previous.drawing.width = previous.drawing.height = 1; previous.liveRenderer?.clear(); }
-  activeSurfaceId = id; library.activePage = id; ink = next.ink; drawing = next.drawing;
+  if (previous) { previous.drawing.width = previous.drawing.height = previous.selection.width = previous.selection.height = 1; previous.liveRenderer?.clear(); }
+  activeSurfaceId = id; library.activePage = id; selection.clear(); ink = next.ink; drawing = next.drawing; selectionCanvas = next.selection;
   ctx = ink.getContext('2d', { alpha: false, desynchronized: false }); live = drawing.getContext('2d', { alpha: true, desynchronized: false });
   raster = next.raster || canvasResolution(parseFloat(next.slot.querySelector('.paper-wrap').style.width) || PAGE_W, devicePixelRatio, PAGE_W, PAGE_H);
   liveRenderer = new LiveInkRenderer(live); liveRenderer.setScale(raster.x, raster.y); drawing.className = `drawing-canvas ${tool}`;
@@ -127,7 +128,7 @@ function createToolCursor() {
   toolCursor.refreshGeometry();
 }
 function watchSurfaceContexts(surface) {
-  for (const canvas of [surface.ink, surface.drawing]) {
+  for (const canvas of [surface.ink, surface.selection, surface.drawing]) {
     if (canvas.dataset.contextWatched) continue;
     canvas.dataset.contextWatched = 'true';
     canvas.addEventListener('contextlost', () => { canvas.style.visibility = 'hidden'; if (surface.id === activeSurfaceId) endGesture(); });
@@ -153,8 +154,62 @@ function renderPageStack() {
 function renderPaper() {
   const started = perfNow(), objectCount = page().objects.length;
   ctx.setTransform(raster.x, 0, 0, raster.y, 0, 0); ctx.clearRect(0, 0, PAGE_W, PAGE_H); drawPaper(ctx, page().template); page().objects.forEach(object => drawObject(ctx, object)); updatePageInfo();
+  renderSelection();
   const surface = pageSurfaces.get(activeSurfaceId); if (surface) { surface.raster = raster; surface.rendered = true; }
   if (started) { perfRecord('pageRenders'); perfRecord('objectsDrawn', objectCount); perfRecord('paperRenderMs', performance.now() - started); }
+}
+function objectBounds(object) {
+  if (object.type === 'text') {
+    const lines = object.text.split('\n');
+    return { left: object.x, top: object.y, right: object.x + Math.max(...lines.map(line => line.length)) * object.size * .65, bottom: object.y + lines.length * object.size * 1.3 };
+  }
+  const points = object.points || [];
+  if (!points.length) return null;
+  const pad = Math.max(1, (object.size || 1) * (object.type === 'highlighter' ? 2.5 : .75));
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const point of points) { left = Math.min(left, point.x); top = Math.min(top, point.y); right = Math.max(right, point.x); bottom = Math.max(bottom, point.y); }
+  return {
+    left: left - pad, top: top - pad, right: right + pad, bottom: bottom + pad
+  };
+}
+function renderSelection() {
+  if (!selectionCanvas) return;
+  const c = selectionCanvas.getContext('2d');
+  c.setTransform(raster.x, 0, 0, raster.y, 0, 0); c.clearRect(0, 0, PAGE_W, PAGE_H);
+  const viewScale = Math.max(.01, (drawing?.getBoundingClientRect().width || PAGE_W) / PAGE_W);
+  c.lineWidth = 1.4 / viewScale; c.strokeStyle = '#7049ed'; c.fillStyle = '#7049ed16'; c.setLineDash([4 / viewScale, 3 / viewScale]);
+  for (const object of selection) {
+    const b = objectBounds(object); if (!b) continue;
+    c.fillRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+    c.strokeRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+  }
+  if (gesture?.type === 'select' && gesture.selectionMode === 'marquee' && gesture.current) {
+    const a = gesture.start, b = gesture.current, left = Math.min(a.x, b.x), top = Math.min(a.y, b.y), width = Math.abs(a.x - b.x), height = Math.abs(a.y - b.y);
+    c.setLineDash([3 / viewScale, 2 / viewScale]); c.fillStyle = '#7049ed20'; c.fillRect(left, top, width, height); c.strokeRect(left, top, width, height);
+  }
+  c.setLineDash([]); updateSelectionUI();
+}
+function updateSelectionUI() {
+  const bar = $('selection-actions'); if (!bar) return;
+  bar.hidden = selection.size === 0;
+  $('selection-count').textContent = `${selection.size} ${selection.size === 1 ? 'tratto selezionato' : 'tratti selezionati'}`;
+}
+function translateObject(object, dx, dy) {
+  if (object.type === 'text') { object.x += dx; object.y += dy; return; }
+  for (const p of object.points || []) { p.x += dx; p.y += dy; }
+  for (const p of object.rawPoints || []) { p.x += dx; p.y += dy; }
+}
+function selectionAction(action, value) {
+  if (!selection.size) return;
+  if (action === 'clear') { selection.clear(); renderSelection(); return; }
+  history.push(page());
+  if (action === 'delete') { page().objects = page().objects.filter(object => !selection.has(object)); selection.clear(); }
+  if (action === 'color') for (const object of selection) object.color = value;
+  if (action === 'duplicate') {
+    const copies = [...selection].map(object => { const copy = clone(object); translateObject(copy, 12, 12); return copy; });
+    page().objects.push(...copies); selection = new Set(copies);
+  }
+  renderPaper(); updateThumb(); updateHistory(); changed();
 }
 function renderLive() {
   const preview = gesture?.pointerType === 'pen' && activeStroke?.type === 'pen' ? gesture.preview.points(activeStroke.points.at(-1), performance.now()) : [];
@@ -172,7 +227,7 @@ function setupCanvases(cssWidth = PAGE_W) {
   const next = canvasResolution(cssWidth, devicePixelRatio, PAGE_W, PAGE_H);
   if (ink.width === next.width && ink.height === next.height && drawing.width === next.width && drawing.height === next.height) return false;
   raster = next;
-  [ink, drawing].forEach(canvas => { canvas.width = next.width; canvas.height = next.height; });
+  [ink, selectionCanvas, drawing].forEach(canvas => { canvas.width = next.width; canvas.height = next.height; });
   const surface = pageSurfaces.get(activeSurfaceId); if (surface) surface.raster = next;
   perfRecord('canvasResizeCount'); perfRecord('canvasPixels', next.width * next.height * 2);
   liveRenderer.setScale(next.x, next.y);
@@ -211,8 +266,9 @@ function setSidebarOpen(open) {
 function selectBook(id) { endGesture(); library.activeBook = id; library.activePage = book().pages[0].id; renderAll(); $('stage').scrollTop = 0; setSidebarOpen(false); changed(); }
 function setTool(next) {
   endGesture(); tool = next; size = brushSize(tool, toolSizes);
+  if (tool !== 'select' && selection.size) { selection.clear(); renderSelection(); }
   document.querySelectorAll('[data-tool]').forEach(button => { const selected = button.dataset.tool === tool; button.classList.toggle('active', selected); button.setAttribute('aria-pressed', selected); });
-drawing.className = `drawing-canvas ${tool}`; const labels = { pen: 'Penna', highlighter: 'Evidenziatore', eraser: 'Gomma (cancella un tratto intero)', text: 'Testo (tocca il foglio)', line: 'Linea (trascina sul foglio)', rect: 'Rettangolo (trascina sul foglio)', hand: 'Sposta (trascina il foglio)' };
+drawing.className = `drawing-canvas ${tool}`; const labels = { pen: 'Penna', highlighter: 'Evidenziatore', eraser: 'Gomma (cancella un tratto intero)', text: 'Testo (tocca il foglio)', line: 'Linea (trascina sul foglio)', rect: 'Rettangolo (trascina sul foglio)', hand: 'Sposta (trascina il foglio)', select: 'Selezione (clicca o trascina una finestra)' };
   $('tool-status').textContent = labels[tool];
   sizePicker?.update(); toolCursor?.refresh();
 }
@@ -239,6 +295,17 @@ function pointerDown(e) {
   if (move) return;
   if (tool === 'text' && !eraseMode) { textPosition = point(e); endGesture(); textDialog(); return; }
   if (eraseMode) { erase(gesture.last, gesture.last); return; }
+  if (tool === 'select') {
+    const at = gesture.last, radius = 7 / Math.max(.01, rect.width / PAGE_W);
+    const hit = [...page().objects].reverse().find(object => hitsObject(object, at, at, radius));
+    if (hit) {
+      if (!selection.has(hit)) selection = new Set([hit]);
+      gesture.selectionMode = 'move'; gesture.selected = [...selection];
+    } else {
+      selection.clear(); gesture.selectionMode = 'marquee'; gesture.start = at; gesture.current = at;
+    }
+    renderSelection(); return;
+  }
   const tuning = penTuning();
   gesture.input = new StrokeInput(smoothing, rect.width / PAGE_W, tuning);
   gesture.preview = new PenPreview(rect.width / PAGE_W); gesture.preview.add(point(e), e.timeStamp);
@@ -252,6 +319,27 @@ function pointerMove(e, final = false) {
   if (e.cancelable) e.preventDefault();
   if (gesture.type === 'hand') { $('stage').scrollTo(gesture.scrollX - (e.clientX - gesture.startX), gesture.scrollY - (e.clientY - gesture.startY)); return; }
   if (gesture.type === 'eraser') { const p = point(e); erase(gesture.last, p); gesture.last = p; return; }
+  if (gesture.type === 'select') {
+    const p = point(e);
+    if (gesture.selectionMode === 'marquee') {
+      gesture.current = p;
+      if (final) {
+        const left = Math.min(gesture.start.x, p.x), right = Math.max(gesture.start.x, p.x), top = Math.min(gesture.start.y, p.y), bottom = Math.max(gesture.start.y, p.y);
+        if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) >= 4) {
+          selection = new Set(page().objects.filter(object => { const b = objectBounds(object); return b && b.right >= left && b.left <= right && b.bottom >= top && b.top <= bottom; }));
+        }
+        renderSelection();
+      } else renderSelection();
+    } else if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) >= 3) {
+      if (!gesture.moved) { history.push(page()); gesture.moved = true; }
+      const dx = p.x - gesture.last.x, dy = p.y - gesture.last.y;
+      if (dx || dy) {
+        gesture.selected.forEach(object => translateObject(object, dx, dy)); gesture.last = p;
+        if (!selectionRenderFrame) selectionRenderFrame = requestAnimationFrame(() => { selectionRenderFrame = 0; renderPaper(); });
+      }
+    }
+    return;
+  }
   if (!activeStroke) return;
   if (['line', 'rect'].includes(gesture.type)) activeStroke.points[1] = point(e);
   else {
@@ -284,6 +372,7 @@ function endGesture() {
   const old = gesture; gesture = null;
   clearTimeout(old.previewTimer);
   if (frame) { cancelAnimationFrame(frame); frame = 0; }
+  if (selectionRenderFrame) { cancelAnimationFrame(selectionRenderFrame); selectionRenderFrame = 0; }
   if (drawing.hasPointerCapture(old.pointerId)) drawing.releasePointerCapture(old.pointerId);
   if (activeStroke) {
     const finished = activeStroke;
@@ -298,6 +387,10 @@ function endGesture() {
   else if (old.type === 'eraser') {
     if (old.modified) { updateThumb(); changed(); }
     updateHistory();
+  }
+  else if (old.type === 'select') {
+    if (old.moved) { renderPaper(); updateThumb(); changed(); }
+    updateSelectionUI(); updateHistory();
   }
   if (old.type === 'hand') requestAnimationFrame(handlePageScroll);
 }
@@ -380,9 +473,9 @@ async function importFile(file) {
   } catch (error) { toast(error instanceof SyntaxError ? 'Il file selezionato non contiene un backup valido.' : error.message); }
 }
 function helpDialog() {
-  openDialog(`<h2>Guida</h2><ul class="help-list"><li><strong>Scrittura.</strong> Scegli un colore e regola lo spessore dal pulsante px. La penna rileva la pressione comunicata dalla tavoletta.</li><li><strong>Touch.</strong> Con “Solo penna” attivo, il tocco sposta il foglio. Il mouse continua a scrivere. Disattivalo per disegnare con le dita.</li><li><strong>Gomma e cronologia.</strong> La gomma elimina un tratto intero. Annulla e ripristina sono disponibili per ogni pagina durante la sessione.</li><li><strong>Salvataggio locale.</strong> Il salvataggio è automatico nel browser di questo dispositivo. Esporta backup regolari: cancellare i dati del browser elimina anche i quaderni.</li><li><strong>Installazione.</strong> Apri Ardesia in Edge o Chrome e usa “Installa app” o la voce di installazione nel menu del browser. Dopo il primo caricamento completo funziona anche offline.</li></ul><p class="warning">Ardesia non include sincronizzazione cloud, riconoscimento della scrittura o importazione PDF.</p><div class="shortcuts"><span><kbd>P</kbd> Penna</span><span><kbd>H</kbd> Evidenziatore</span><span><kbd>E</kbd> Gomma</span><span><kbd>T</kbd> Testo</span><span><kbd>V</kbd> Sposta</span><span><kbd>Ctrl Z</kbd> Annulla</span><span><kbd>Ctrl Y</kbd> Ripristina</span><span><kbd>Ctrl S</kbd> Salva</span></div>`);
+  openDialog(`<h2>Guida</h2><ul class="help-list"><li><strong>Scrittura.</strong> Scegli un colore e regola lo spessore dal pulsante px. La penna rileva la pressione comunicata dalla tavoletta.</li><li><strong>Selezione.</strong> Scegli lo strumento freccia. Clicca un tratto per selezionarlo, trascina da un punto vuoto per selezionarne più di uno, poi trascina la selezione per spostarla.</li><li><strong>Touch.</strong> Con “Solo penna” attivo, il tocco sposta il foglio. Il mouse continua a scrivere. Disattivalo per disegnare con le dita.</li><li><strong>Gomma e cronologia.</strong> La gomma elimina un tratto intero. Annulla e ripristina sono disponibili per ogni pagina durante la sessione.</li><li><strong>Salvataggio locale.</strong> Il salvataggio è automatico nel browser di questo dispositivo. Esporta backup regolari: cancellare i dati del browser elimina anche i quaderni.</li><li><strong>Installazione.</strong> Apri Ardesia in Edge o Chrome e usa “Installa app” o la voce di installazione nel menu del browser. Dopo il primo caricamento completo funziona anche offline.</li></ul><p class="warning">Ardesia non include sincronizzazione cloud, riconoscimento della scrittura o importazione PDF.</p><div class="shortcuts"><span><kbd>P</kbd> Penna</span><span><kbd>H</kbd> Evidenziatore</span><span><kbd>E</kbd> Gomma</span><span><kbd>T</kbd> Testo</span><span><kbd>V</kbd> Sposta</span><span><kbd>S</kbd> Selezione</span><span><kbd>Ctrl Z</kbd> Annulla</span><span><kbd>Ctrl Y</kbd> Ripristina</span><span><kbd>Ctrl S</kbd> Salva</span></div>`);
 }
-function undoRedo(direction) { endGesture(); if (history.move(page(), direction)) { renderPaper(); updateThumb(); changed(); } }
+function undoRedo(direction) { endGesture(); selection.clear(); if (history.move(page(), direction)) { renderPaper(); updateThumb(); changed(); } else renderSelection(); }
 function setZoom(delta) { endGesture(); const current = activePaperWidth() / PAGE_W; fit = false; zoom = Math.max(.25, Math.min(2.5, Math.round((current + delta) * 100) / 100)); resizePage(true); }
 function cancelTouchGestureForPinch() {
   if (!gesture || gesture.pointerType !== 'touch') return;
@@ -498,6 +591,8 @@ function bindEvents() {
   $('pages').onclick = e => { const button = e.target.closest('[data-page]'); if (button) selectPage(button.dataset.page); };
   $('search').oninput = renderBooks; $('new-book').onclick = newBookDialog;
   document.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => setTool(button.dataset.tool));
+  $('selection-actions').addEventListener('click', e => { const button = e.target.closest('[data-selection-action]'); if (button) selectionAction(button.dataset.selectionAction); });
+  $('selection-color').addEventListener('change', e => selectionAction('color', e.target.value));
   $('colors').onclick = e => { const button = e.target.closest('[data-color]'); if (button) { color = button.dataset.color; renderColors(); } };
   const saveWriting = () => { library.writing = { ...library.writing, size: toolSizes.pen, sizes: { ...toolSizes } }; changed(); };
   sizePicker = new SizePicker(() => ({ tool, sizes: toolSizes, color }), (family, value) => {
@@ -534,8 +629,9 @@ function bindEvents() {
   document.addEventListener('keydown', e => {
     if ($('dialog').open || $('pen-training-dialog').open || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     const key = e.key.toLowerCase();
+    if ((key === 'delete' || key === 'backspace') && selection.size && tool === 'select') { e.preventDefault(); selectionAction('delete'); return; }
     if (e.ctrlKey || e.metaKey) { if (['z', 'y', 's'].includes(key)) { e.preventDefault(); if (key === 'z') undoRedo(e.shiftKey ? 'redo' : 'undo'); if (key === 'y') undoRedo('redo'); if (key === 's') { endGesture(); void flushSave(); } } return; }
-    const shortcuts = { p: 'pen', h: 'highlighter', e: 'eraser', t: 'text', l: 'line', r: 'rect', v: 'hand' }; if (shortcuts[key]) setTool(shortcuts[key]); if (e.key === '?') helpDialog();
+    const shortcuts = { p: 'pen', h: 'highlighter', e: 'eraser', t: 'text', l: 'line', r: 'rect', v: 'hand', s: 'select' }; if (shortcuts[key]) setTool(shortcuts[key]); if (e.key === '?') helpDialog();
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { endGesture(); void flushSave(); } else requestAnimationFrame(redrawCanvases); });
   window.addEventListener('focus', () => requestAnimationFrame(redrawCanvases));
