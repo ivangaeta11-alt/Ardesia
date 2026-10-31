@@ -251,11 +251,22 @@ body.focus-mode.focus-tools-hidden .writing-toolbar{display:none}
 .paper{position:relative;width:100%;aspect-ratio:794/1123;background:var(--paper);border-radius:5px;box-shadow:0 2px 8px #37306d12,0 14px 40px #37306d0d;overflow:hidden;isolation:isolate}
 .paper canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .ink-canvas{z-index:1}
-.drawing-canvas{z-index:2;touch-action:none;cursor:crosshair;background:transparent}
+.selection-canvas{z-index:2;pointer-events:none}
+.drawing-canvas{z-index:3;touch-action:none;cursor:crosshair;background:transparent}
+.drawing-canvas.select{cursor:default}
 .drawing-canvas.hand{cursor:grab}
 .drawing-canvas.hand:active{cursor:grabbing}
 .drawing-canvas.text{cursor:text}
 .drawing-canvas.eraser{cursor:cell}
 .drawing-canvas[data-custom-cursor=true]{cursor:none}
 @media(max-width:1024px){.paper-wrap{max-width:none}}
+
+.selection-actions{position:fixed;left:50%;bottom:54px;z-index:70;display:flex;align-items:center;gap:5px;max-width:calc(100vw - 20px);padding:6px 8px;transform:translateX(-50%);background:#fff;border:1px solid #ded8f3;border-radius:12px;box-shadow:0 5px 22px #29234b26;color:#303257;font-size:11px;white-space:nowrap}
+.selection-actions[hidden]{display:none}
+.selection-actions>span{padding:0 7px;color:#686a91;font-variant-numeric:tabular-nums}
+.selection-actions>button,.selection-color-control{min-height:30px;padding:6px 9px;border:1px solid #e7e3f5;border-radius:8px;background:#faf9ff;color:#41436a;font-size:10px}
+.selection-actions>button:hover,.selection-color-control:hover{background:#f0edff;border-color:#d4cbfb}
+.selection-color-control{position:relative;display:flex;align-items:center;gap:6px;cursor:pointer}
+.selection-color-control input{width:16px;height:16px;padding:0;border:0;background:transparent;cursor:pointer}
+@media(max-width:520px){.selection-actions{bottom:calc(48px + env(safe-area-inset-bottom));gap:3px;padding:5px}.selection-actions>span{font-size:9px;padding:0 4px}.selection-actions>button,.selection-color-control{padding:5px 6px;font-size:9px}}
 
