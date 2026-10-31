@@ -22,13 +22,15 @@ let pinchZoom = null;
 let storageReady = false, revision = 0, raster = canvasResolution(PAGE_W, devicePixelRatio, PAGE_W, PAGE_H), textPosition, zoomRasterTimer;
 // Keep both layers in the browser's normal compositor. A desynchronized,
 // transparent overlay can be presented as black by some Windows GPU paths.
-const ink = $('ink'), drawing = $('drawing'), ctx = ink.getContext('2d', { alpha: false, desynchronized: false }), live = drawing.getContext('2d', { alpha: true, desynchronized: false });
-const liveRenderer = new LiveInkRenderer(live);
+let ink, drawing, ctx, live, liveRenderer, activeSurfaceId = null, pageObserver = null, eventsBound = false, lastPageScrollTop = 0, autoPagePending = false;
+const pageSurfaces = new Map();
+const rawInput = 'onpointerrawupdate' in window;
 let lastLivePaint = -Infinity;
 let penTraining;
 let trainingMode = false, trainingLibrary = null, trainingTuning = DEFAULT_PEN_TUNING, trainingConfigChanged = false, savedTrainingHistory = null, savedTrainingToolSizes = null, savedTrainingSize = null, savedTrainingTool = null, savedTrainingColor = null, savedTrainingSearch = '', savedTrainingZoom = 1, savedTrainingFit = true, savedTrainingScroll = { left: 0, top: 0 };
 const book = () => library.books.find(item => item.id === library.activeBook);
 const page = () => book().pages.find(item => item.id === library.activePage);
+const activePaperWidth = () => pageSurfaces.get(activeSurfaceId)?.slot.querySelector('.paper-wrap').getBoundingClientRect().width || PAGE_W;
 const penTuning = () => trainingMode ? trainingTuning : normalizePenTuning(library?.writing?.penTuning || DEFAULT_PEN_TUNING);
 const setStatus = (text, error = false) => { $('save-status').innerHTML = `<span class="status-dot" style="background:${error ? '#b66b55' : '#75a586'}"></span>${esc(text)}`; $('save-status').title = text; };
 function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false; toastTimer = setTimeout(() => $('toast').hidden = true, 4200); }
@@ -70,14 +72,82 @@ function queueThumbnail(pageId) {
 function updateHistory() { const h = history.state(page().id); $('undo').disabled = !h.undo.length; $('redo').disabled = !h.redo.length; }
 function updatePageInfo() {
   const n = book().pages.findIndex(item => item.id === page().id) + 1;
-  $('page-label').textContent = `PAGINA ${String(n).padStart(2, '0')}`;
-  $('template').value = page().template;
+  const slot = [...$('page-stack').querySelectorAll('.page-slot')].find(item => item.dataset.pageId === page().id);
+  if (slot) { slot.querySelector('.page-label').textContent = `PAGINA ${String(n).padStart(2, '0')}`; slot.querySelector('.page-template').value = page().template; }
   $('object-count').textContent = `${page().objects.length} ${page().objects.length === 1 ? 'elemento' : 'elementi'}`;
   updateHistory();
+}
+function pageSlotMarkup(item, index) {
+  return `<div class="page-meta"><span class="page-label">PAGINA ${String(index + 1).padStart(2, '0')}</span><div><label>Carta</label><select class="page-template" aria-label="Tipo di carta, pagina ${index + 1}"><option value="dots" ${item.template === 'dots' ? 'selected' : ''}>Puntinata</option><option value="ruled" ${item.template === 'ruled' ? 'selected' : ''}>A righe</option><option value="grid" ${item.template === 'grid' ? 'selected' : ''}>A quadretti</option><option value="blank" ${item.template === 'blank' ? 'selected' : ''}>Bianca</option></select><button class="icon-button" data-page-menu="${esc(item.id)}" aria-label="Opzioni pagina ${index + 1}"><svg><use href="#i-more"/></svg></button></div></div><div class="paper-wrap"><div class="paper"><canvas class="ink-canvas" aria-hidden="true"></canvas><canvas class="drawing-canvas" aria-label="Foglio ${index + 1}: scrivi con la penna o il mouse" tabindex="0"></canvas></div></div>`;
+}
+function createPageSurface(item, index) {
+  const slot = document.createElement('article'); slot.className = 'page-slot'; slot.dataset.pageId = item.id; slot.innerHTML = pageSlotMarkup(item, index);
+  const surface = { id: item.id, model: item, slot, ink: slot.querySelector('.ink-canvas'), drawing: slot.querySelector('.drawing-canvas'), raster: null, rendered: false };
+  surface.ink.width = surface.ink.height = surface.drawing.width = surface.drawing.height = 1;
+  pageSurfaces.set(item.id, surface); return surface;
+}
+function renderStaticPage(surface, cssWidth) {
+  if (!surface || surface.id === activeSurfaceId || !surface.slot.isConnected) return;
+  const width = cssWidth || parseFloat(surface.slot.querySelector('.paper-wrap').style.width) || PAGE_W;
+  const next = canvasResolution(width, devicePixelRatio, PAGE_W, PAGE_H);
+  if (surface.rendered && surface.raster?.width === next.width && surface.raster?.height === next.height) { surface.drawing.width = surface.drawing.height = 1; return; }
+  if (surface.ink.width !== next.width || surface.ink.height !== next.height) { surface.ink.width = next.width; surface.ink.height = next.height; }
+  surface.drawing.width = surface.drawing.height = 1;
+  const target = surface.model, c = surface.ink.getContext('2d', { alpha: false });
+  c.setTransform(next.x, 0, 0, next.y, 0, 0); c.clearRect(0, 0, PAGE_W, PAGE_H); drawPaper(c, target.template); target.objects.forEach(object => drawObject(c, object));
+  surface.raster = next; surface.rendered = true;
+}
+function releaseStaticPage(surface) {
+  if (!surface || surface.id === activeSurfaceId) return;
+  surface.ink.width = surface.ink.height = surface.drawing.width = surface.drawing.height = 1; surface.raster = null; surface.rendered = false;
+}
+function setActiveSurface(id) {
+  if (activeSurfaceId === id) return false;
+  const next = pageSurfaces.get(id); if (!next) return false;
+  endGesture(); toolCursor?.destroy(); toolCursor = null;
+  const previous = pageSurfaces.get(activeSurfaceId);
+  if (previous) { previous.drawing.width = previous.drawing.height = 1; previous.liveRenderer?.clear(); }
+  activeSurfaceId = id; library.activePage = id; ink = next.ink; drawing = next.drawing;
+  ctx = ink.getContext('2d', { alpha: false, desynchronized: false }); live = drawing.getContext('2d', { alpha: true, desynchronized: false });
+  raster = next.raster || canvasResolution(parseFloat(next.slot.querySelector('.paper-wrap').style.width) || PAGE_W, devicePixelRatio, PAGE_W, PAGE_H);
+  liveRenderer = new LiveInkRenderer(live); liveRenderer.setScale(raster.x, raster.y); drawing.className = `drawing-canvas ${tool}`;
+  if (eventsBound) { createToolCursor(); watchSurfaceContexts(next); }
+  return true;
+}
+function createToolCursor() {
+  if (!drawing) return;
+  toolCursor?.destroy();
+  toolCursor = new ToolCursor($('cursor-layer'), drawing, $('stage'), () => ({ tool, gesture: gesture?.type, pointerId: gesture?.pointerId, color, sizes: toolSizes, blocked: !library || $('dialog').open || !$('size-panel').hidden }), PAGE_W);
+  toolCursor.refreshGeometry();
+}
+function watchSurfaceContexts(surface) {
+  for (const canvas of [surface.ink, surface.drawing]) {
+    if (canvas.dataset.contextWatched) continue;
+    canvas.dataset.contextWatched = 'true';
+    canvas.addEventListener('contextlost', () => { canvas.style.visibility = 'hidden'; if (surface.id === activeSurfaceId) endGesture(); });
+    canvas.addEventListener('contextrestored', () => requestAnimationFrame(() => { if (surface.id === activeSurfaceId) { renderPaper(); renderLive(); } else renderStaticPage(surface); canvas.style.visibility = ''; }));
+  }
+}
+function renderPageStack() {
+  endGesture(); toolCursor?.destroy(); toolCursor = null; pageObserver?.disconnect(); pageSurfaces.clear(); activeSurfaceId = null;
+  const stack = $('page-stack'); stack.replaceChildren();
+  book().pages.forEach((item, index) => { const surface = createPageSurface(item, index); stack.append(surface.slot); if (eventsBound) { bindDrawingCanvas(surface); watchSurfaceContexts(surface); } });
+  if (!pageSurfaces.has(library.activePage)) library.activePage = book().pages[0].id;
+  setActiveSurface(library.activePage);
+  pageObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      const surface = pageSurfaces.get(entry.target.dataset.pageId); if (!surface) continue;
+      if (entry.isIntersecting) renderStaticPage(surface);
+      else releaseStaticPage(surface);
+    }
+  }, { root: $('stage'), rootMargin: '1000px 0px' });
+  for (const surface of pageSurfaces.values()) pageObserver.observe(surface.slot);
+  requestAnimationFrame(() => pageSurfaces.get(library.activePage)?.slot.scrollIntoView({ block: 'start' }));
 }
 function renderPaper() {
   const started = perfNow(), objectCount = page().objects.length;
   ctx.setTransform(raster.x, 0, 0, raster.y, 0, 0); ctx.clearRect(0, 0, PAGE_W, PAGE_H); drawPaper(ctx, page().template); page().objects.forEach(object => drawObject(ctx, object)); updatePageInfo();
+  const surface = pageSurfaces.get(activeSurfaceId); if (surface) { surface.raster = raster; surface.rendered = true; }
   if (started) { perfRecord('pageRenders'); perfRecord('objectsDrawn', objectCount); perfRecord('paperRenderMs', performance.now() - started); }
 }
 function renderLive() {
@@ -94,16 +164,17 @@ function queueLive() {
 function redrawCanvases() { if (library) { renderPaper(); renderLive(); } }
 function setupCanvases(cssWidth = PAGE_W) {
   const next = canvasResolution(cssWidth, devicePixelRatio, PAGE_W, PAGE_H);
-  if (ink.width === next.width && ink.height === next.height) return false;
+  if (ink.width === next.width && ink.height === next.height && drawing.width === next.width && drawing.height === next.height) return false;
   raster = next;
   [ink, drawing].forEach(canvas => { canvas.width = next.width; canvas.height = next.height; });
+  const surface = pageSurfaces.get(activeSurfaceId); if (surface) surface.raster = next;
   perfRecord('canvasResizeCount'); perfRecord('canvasPixels', next.width * next.height * 2);
   liveRenderer.setScale(next.x, next.y);
   return true;
 }
 function renderAll() {
   $('book-title').value = book().title; $('breadcrumb-title').textContent = book().title; document.title = book().title;
-  renderBooks(); renderPages(); renderPaper(); resizePage();
+  renderBooks(); renderPages(); renderPageStack(); resizePage(); renderPaper();
 }
 function resizePage(deferRaster = false) {
   const smallScreen = innerWidth <= 1024;
@@ -111,18 +182,24 @@ function resizePage(deferRaster = false) {
   const available = Math.max(200, $('stage').clientWidth - margin);
   const width = fit ? Math.min(PAGE_W, available) : PAGE_W * zoom;
   if (gesture && Math.abs(gesture.rect.width - width) > .5) endGesture();
-  $('paper-wrap').style.width = `${width}px`; $('paper-wrap').style.maxWidth = 'none';
-  $('page-meta')?.style.setProperty('width', `${width}px`); $('page-meta').style.maxWidth = 'none';
+  document.querySelectorAll('#page-stack .paper-wrap').forEach(el => { el.style.width = `${width}px`; el.style.maxWidth = 'none'; });
+  document.querySelectorAll('#page-stack .page-meta').forEach(el => { el.style.width = `${width}px`; el.style.maxWidth = 'none'; });
   $('zoom-value').value = `${Math.round(width / PAGE_W * 100)}%`;
   clearTimeout(zoomRasterTimer);
   const commitRaster = () => {
     if (setupCanvases(width) && library) { renderPaper(); renderLive(); }
+    for (const surface of pageSurfaces.values()) if (surface.id !== activeSurfaceId && surface.slot.getBoundingClientRect().bottom >= $('stage').getBoundingClientRect().top - 1000 && surface.slot.getBoundingClientRect().top <= $('stage').getBoundingClientRect().bottom + 1000) renderStaticPage(surface, width);
   };
   if (deferRaster) zoomRasterTimer = setTimeout(commitRaster, 140);
   else commitRaster();
   toolCursor?.refreshGeometry();
 }
-function selectPage(id) { endGesture(); library.activePage = id; renderPages(); renderPaper(); $('stage').scrollTop = 0; changed(); }
+function selectPage(id, scroll = true) {
+  if (!pageSurfaces.has(id)) return;
+  const changedPage = setActiveSurface(id);
+  if (changedPage) { renderPages(); setupCanvases(parseFloat(pageSurfaces.get(id).slot.querySelector('.paper-wrap').style.width) || PAGE_W); renderPaper(); renderLive(); updatePageInfo(); changed(); }
+  if (scroll) pageSurfaces.get(id).slot.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
 function setSidebarOpen(open) {
   $('sidebar').classList.toggle('open', open);
   $('sidebar-backdrop').hidden = !open;
@@ -132,7 +209,7 @@ function selectBook(id) { endGesture(); library.activeBook = id; library.activeP
 function setTool(next) {
   endGesture(); tool = next; size = brushSize(tool, toolSizes);
   document.querySelectorAll('[data-tool]').forEach(button => { const selected = button.dataset.tool === tool; button.classList.toggle('active', selected); button.setAttribute('aria-pressed', selected); });
-drawing.className = tool; const labels = { pen: 'Penna', highlighter: 'Evidenziatore', eraser: 'Gomma (cancella un tratto intero)', text: 'Testo (tocca il foglio)', line: 'Linea (trascina sul foglio)', rect: 'Rettangolo (trascina sul foglio)', hand: 'Sposta (trascina il foglio)' };
+drawing.className = `drawing-canvas ${tool}`; const labels = { pen: 'Penna', highlighter: 'Evidenziatore', eraser: 'Gomma (cancella un tratto intero)', text: 'Testo (tocca il foglio)', line: 'Linea (trascina sul foglio)', rect: 'Rettangolo (trascina sul foglio)', hand: 'Sposta (trascina il foglio)' };
   $('tool-status').textContent = labels[tool];
   sizePicker?.update(); toolCursor?.refresh();
 }
@@ -210,6 +287,7 @@ function endGesture() {
     history.push(page()); page().objects.push(finished); activeStroke = null;
     // Composite just the finished stroke; a busy page need not be rebuilt each time.
     ctx.setTransform(raster.x, 0, 0, raster.y, 0, 0); drawObject(ctx, finished);
+    const surface = pageSurfaces.get(activeSurfaceId); if (surface) surface.rendered = true;
     renderLive(); updatePageInfo(); changed();
     // Thumbnail generation can be more expensive than the pen lift itself.
     queueThumbnail(page().id);
@@ -218,6 +296,7 @@ function endGesture() {
     if (old.modified) { updateThumb(); changed(); }
     updateHistory();
   }
+  if (old.type === 'hand') requestAnimationFrame(handlePageScroll);
 }
 function beginTraining(tuning) {
   endGesture(); if (dirty && storageReady) void flushSave(); clearTimeout(saveTimer); trainingLibrary = library; trainingConfigChanged = false;
@@ -257,9 +336,9 @@ function confirmDialog(title, description, action, label = 'Elimina') { openDial
 function menuDialog(title, actions) { openDialog(`<h2>${esc(title)}</h2>${actions.map((item, i) => `<button type="button" class="action-row ${item.danger ? 'danger' : ''}" data-action="${i}">${icon(item.icon)}<div><span>${esc(item.label)}</span><small>${esc(item.description)}</small></div></button>`).join('')}`); $('dialog-content').querySelectorAll('[data-action]').forEach(button => button.onclick = () => { closeDialog(); actions[Number(button.dataset.action)].run(); }); }
 function pageMenu() {
   menuDialog('Opzioni pagina', [
-    { icon: 'copy', label: 'Duplica pagina', description: 'Crea una copia subito dopo questa pagina.', run: () => { const copy = clone(page()); copy.id = uid(); const index = book().pages.indexOf(page()); book().pages.splice(index + 1, 0, copy); selectPage(copy.id); renderBooks(); } },
+    { icon: 'copy', label: 'Duplica pagina', description: 'Crea una copia subito dopo questa pagina.', run: () => { const copy = clone(page()); copy.id = uid(); const index = book().pages.indexOf(page()); book().pages.splice(index + 1, 0, copy); library.activePage = copy.id; renderBooks(); renderPages(); renderPageStack(); resizePage(); renderPaper(); changed(); } },
     { icon: 'eraser', label: 'Svuota pagina', description: 'Rimuove tutti i tratti. Puoi annullare con Ctrl+Z.', run: () => confirmDialog('Svuotare la pagina?', 'Il tipo di carta resterà invariato.', () => { history.push(page()); page().objects = []; renderPaper(); updateThumb(); changed(); }, 'Svuota pagina') },
-    { icon: 'trash', label: 'Elimina pagina', description: 'La rimozione della pagina è definitiva.', danger: true, run: () => { if (book().pages.length === 1) { toast('Mantieni almeno una pagina. Puoi svuotarla dal menu.'); return; } confirmDialog('Eliminare questa pagina?', 'Non potrai annullare questa operazione.', () => { const index = book().pages.indexOf(page()); history.entries.delete(page().id); book().pages.splice(index, 1); selectPage(book().pages[Math.min(index, book().pages.length - 1)].id); renderBooks(); }); } }
+    { icon: 'trash', label: 'Elimina pagina', description: 'La rimozione della pagina è definitiva.', danger: true, run: () => { if (book().pages.length === 1) { toast('Mantieni almeno una pagina. Puoi svuotarla dal menu.'); return; } confirmDialog('Eliminare questa pagina?', 'Non potrai annullare questa operazione.', () => { const index = book().pages.indexOf(page()); history.entries.delete(page().id); book().pages.splice(index, 1); library.activePage = book().pages[Math.min(index, book().pages.length - 1)].id; renderBooks(); renderPages(); renderPageStack(); resizePage(); renderPaper(); changed(); }); } }
   ]);
 }
 function bookMenu() {
@@ -301,7 +380,7 @@ function helpDialog() {
   openDialog(`<h2>Guida</h2><ul class="help-list"><li><strong>Scrittura.</strong> Scegli un colore e regola lo spessore dal pulsante px. La penna rileva la pressione comunicata dalla tavoletta.</li><li><strong>Touch.</strong> Con “Solo penna” attivo, il tocco sposta il foglio. Il mouse continua a scrivere. Disattivalo per disegnare con le dita.</li><li><strong>Gomma e cronologia.</strong> La gomma elimina un tratto intero. Annulla e ripristina sono disponibili per ogni pagina durante la sessione.</li><li><strong>Salvataggio locale.</strong> Il salvataggio è automatico nel browser di questo dispositivo. Esporta backup regolari: cancellare i dati del browser elimina anche i quaderni.</li><li><strong>Installazione.</strong> Apri Ardesia in Edge o Chrome e usa “Installa app” o la voce di installazione nel menu del browser. Dopo il primo caricamento completo funziona anche offline.</li></ul><p class="warning">Ardesia non include sincronizzazione cloud, riconoscimento della scrittura o importazione PDF.</p><div class="shortcuts"><span><kbd>P</kbd> Penna</span><span><kbd>H</kbd> Evidenziatore</span><span><kbd>E</kbd> Gomma</span><span><kbd>T</kbd> Testo</span><span><kbd>V</kbd> Sposta</span><span><kbd>Ctrl Z</kbd> Annulla</span><span><kbd>Ctrl Y</kbd> Ripristina</span><span><kbd>Ctrl S</kbd> Salva</span></div>`);
 }
 function undoRedo(direction) { endGesture(); if (history.move(page(), direction)) { renderPaper(); updateThumb(); changed(); } }
-function setZoom(delta) { endGesture(); const current = $('paper-wrap').getBoundingClientRect().width / PAGE_W; fit = false; zoom = Math.max(.25, Math.min(2.5, Math.round((current + delta) * 100) / 100)); resizePage(true); }
+function setZoom(delta) { endGesture(); const current = activePaperWidth() / PAGE_W; fit = false; zoom = Math.max(.25, Math.min(2.5, Math.round((current + delta) * 100) / 100)); resizePage(true); }
 function cancelTouchGestureForPinch() {
   if (!gesture || gesture.pointerType !== 'touch') return;
   const old = gesture; gesture = null; clearTimeout(old.previewTimer);
@@ -323,7 +402,7 @@ function startPinch(e) {
   if (touchPointers.size < 2) return;
   const ids = [...touchPointers.keys()].slice(0, 2), [a, b] = ids.map(id => touchPointers.get(id));
   cancelTouchGestureForPinch();
-  pinchZoom = { ids, pointerIds: new Set(touchPointers.keys()), distance: Math.max(1, touchDistance(a, b)), width: $('paper-wrap').getBoundingClientRect().width };
+  pinchZoom = { ids, pointerIds: new Set(touchPointers.keys()), distance: Math.max(1, touchDistance(a, b)), width: activePaperWidth() };
   if (drawing.setPointerCapture) drawing.setPointerCapture(e.pointerId);
   e.preventDefault(); e.stopImmediatePropagation();
 }
@@ -347,7 +426,7 @@ function endPinchPointer(e) {
   if (ids.length < 2) { pinchZoom = null; return; }
   if (!pinchZoom.ids.every(id => touchPointers.has(id))) {
     const [a, b] = ids.map(id => touchPointers.get(id));
-    pinchZoom = { ids, pointerIds: new Set(touchPointers.keys()), distance: Math.max(1, touchDistance(a, b)), width: $('paper-wrap').getBoundingClientRect().width };
+    pinchZoom = { ids, pointerIds: new Set(touchPointers.keys()), distance: Math.max(1, touchDistance(a, b)), width: activePaperWidth() };
   }
 }
 function setFocusMode(open) {
@@ -362,7 +441,49 @@ function setFocusMode(open) {
   $('fullscreen').querySelector('use').setAttribute('href', open ? '#i-collapse' : '#i-expand');
   requestAnimationFrame(() => { resizePage(); toolCursor?.refreshGeometry(); });
 }
+function appendPage(automatic = false) {
+  const previous = book().pages.at(-1), item = newPage(previous?.template || page().template);
+  const surface = createPageSurface(item, book().pages.length);
+  book().pages.push(item); $('page-stack').append(surface.slot);
+  if (eventsBound) { bindDrawingCanvas(surface); watchSurfaceContexts(surface); }
+  pageObserver?.observe(surface.slot); renderPages(); renderBooks(); changed();
+  if (!automatic) selectPage(item.id);
+  return item;
+}
+function handlePageScroll() {
+  const stage = $('stage');
+  if (!library) return;
+  // Keep the previous position while hand panning. Scroll events fire during
+  // the pointer gesture, so consuming them here would hide the downward motion
+  // from the final check that can append the next page.
+  if (gesture || pinchZoom) return;
+  const movingDown = stage.scrollTop > lastPageScrollTop; lastPageScrollTop = stage.scrollTop;
+  const bounds = stage.getBoundingClientRect(); let best = null, bestOverlap = -1, bestCenter = Infinity;
+  for (const surface of pageSurfaces.values()) {
+    const rect = surface.slot.getBoundingClientRect(), overlap = Math.max(0, Math.min(rect.bottom, bounds.bottom) - Math.max(rect.top, bounds.top));
+    const center = Math.abs((rect.top + rect.bottom) / 2 - (bounds.top + bounds.bottom) / 2);
+    if (overlap > bestOverlap || (overlap === bestOverlap && center < bestCenter)) { best = surface; bestOverlap = overlap; bestCenter = center; }
+  }
+  if (best && best.id !== activeSurfaceId) selectPage(best.id, false);
+  const bottomGap = stage.scrollHeight - stage.clientHeight - stage.scrollTop;
+  if (movingDown && bottomGap <= 110 && !autoPagePending && !trainingMode) {
+    autoPagePending = true; appendPage(true); requestAnimationFrame(() => { autoPagePending = false; });
+  }
+}
+function bindDrawingCanvas(surface) {
+  const canvas = surface.drawing; if (canvas.dataset.eventsBound) return;
+  canvas.dataset.eventsBound = 'true';
+  canvas.addEventListener('pointerdown', e => { if (surface.id !== activeSurfaceId) selectPage(surface.id, false); pointerDown(e); });
+  canvas.addEventListener(rawInput ? 'pointerrawupdate' : 'pointermove', e => pointerMove(e));
+  if (rawInput) canvas.addEventListener('pointermove', e => { if (capturePredictions(e)) queueLive(); });
+  canvas.addEventListener('pointerup', e => { if (gesture?.pointerId === e.pointerId) { pointerMove(e, true); endGesture(); } });
+  canvas.addEventListener('pointercancel', e => { if (gesture?.pointerId === e.pointerId) endGesture(); });
+  canvas.addEventListener('lostpointercapture', e => { if (gesture?.pointerId === e.pointerId) endGesture(); });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+}
 function bindEvents() {
+  eventsBound = true;
+  for (const surface of pageSurfaces.values()) { bindDrawingCanvas(surface); watchSurfaceContexts(surface); }
   $('books').onclick = e => { const button = e.target.closest('[data-book]'); if (button) selectBook(button.dataset.book); };
   $('pages').onclick = e => { const button = e.target.closest('[data-page]'); if (button) selectPage(button.dataset.page); };
   $('search').oninput = renderBooks; $('new-book').onclick = newBookDialog;
@@ -374,20 +495,14 @@ function bindEvents() {
   }, open => { if (open) toolCursor?.hide(); else toolCursor?.refresh(); });
   $('book-title').oninput = e => { const title = e.target.value.trim(); if (!title) return; book().title = title; $('breadcrumb-title').textContent = title; document.title = title; renderBooks(); changed(); };
   $('book-title').onblur = () => $('book-title').value = book().title;
-  $('add-page').onclick = () => { endGesture(); const item = newPage(page().template); book().pages.push(item); selectPage(item.id); renderBooks(); $('pages').lastElementChild?.scrollIntoView({ block: 'nearest' }); };
-  $('template').onchange = e => { endGesture(); page().template = e.target.value; renderPaper(); updateThumb(); changed(); };
+  $('add-page').onclick = () => appendPage(false);
+  $('page-stack').addEventListener('change', e => {
+    const select = e.target.closest('.page-template'), slot = select?.closest('.page-slot'); if (!select || !slot) return;
+    selectPage(slot.dataset.pageId, false); endGesture(); page().template = select.value; renderPaper(); updateThumb(); changed();
+  });
+  $('page-stack').addEventListener('click', e => { const button = e.target.closest('[data-page-menu]'); if (button) { e.stopPropagation(); selectPage(button.dataset.pageMenu, false); pageMenu(); } });
   $('undo').onclick = () => undoRedo('undo'); $('redo').onclick = () => undoRedo('redo');
-  drawing.addEventListener('pointerdown', pointerDown);
-  const rawInput = 'onpointerrawupdate' in window;
-  drawing.addEventListener(rawInput ? 'pointerrawupdate' : 'pointermove', e => pointerMove(e));
-  // pointermove supplies predictions only. Real coordinates still come from
-  // exactly one event stream, so raw samples cannot be recorded twice.
-  if (rawInput) drawing.addEventListener('pointermove', e => { if (capturePredictions(e)) queueLive(); });
-  drawing.addEventListener('pointerup', e => { if (gesture?.pointerId === e.pointerId) { pointerMove(e, true); endGesture(); } });
-  drawing.addEventListener('pointercancel', e => { if (gesture?.pointerId === e.pointerId) endGesture(); });
-  drawing.addEventListener('lostpointercapture', e => { if (gesture?.pointerId === e.pointerId) endGesture(); });
-  drawing.addEventListener('contextmenu', e => e.preventDefault());
-  $('export').onclick = exportDialog; $('book-menu').onclick = bookMenu; $('page-menu').onclick = pageMenu;
+  $('export').onclick = exportDialog; $('book-menu').onclick = bookMenu;
   $('import').onclick = () => $('import-file').click(); $('import-file').onchange = e => { void importFile(e.target.files[0]); e.target.value = ''; };
   $('help').onclick = helpDialog; $('toggle-sidebar').onclick = () => setSidebarOpen(!$('sidebar').classList.contains('open'));
   $('sidebar-backdrop').onclick = () => setSidebarOpen(false);
@@ -422,23 +537,12 @@ function bindEvents() {
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { endGesture(); void flushSave(); } else requestAnimationFrame(redrawCanvases); });
   window.addEventListener('focus', () => requestAnimationFrame(redrawCanvases));
-  for (const canvas of [ink, drawing]) {
-    canvas.addEventListener('contextlost', () => {
-      // Do not cancel contextlost: the browser must be allowed to restore it.
-      canvas.style.visibility = 'hidden'; endGesture();
-toast('Ripristino della visualizzazione');
-    });
-    canvas.addEventListener('contextrestored', () => {
-      requestAnimationFrame(() => { redrawCanvases(); canvas.style.visibility = ''; });
-    });
-  }
   window.addEventListener('pagehide', () => { endGesture(); void flushSave(); });
   window.addEventListener('beforeunload', e => { if (dirty || activeStroke) { endGesture(); void flushSave(); e.preventDefault(); e.returnValue = ''; } });
   new ResizeObserver(() => resizePage()).observe($('stage'));
   window.addEventListener('resize', resizePage);
-  $('stage').addEventListener('scroll', () => { if (gesture && gesture.type !== 'hand') endGesture(); }, { passive: true });
-  toolCursor = new ToolCursor($('cursor-layer'), drawing, $('stage'), () => ({ tool, gesture: gesture?.type, pointerId: gesture?.pointerId, color, sizes: toolSizes, blocked: !library || $('dialog').open || !$('size-panel').hidden }), PAGE_W);
-  toolCursor.refreshGeometry();
+  $('stage').addEventListener('scroll', () => { if (gesture && gesture.type !== 'hand') endGesture(); if (!gesture) handlePageScroll(); }, { passive: true });
+  createToolCursor();
   installPerfPanel();
   $('dialog-form').onsubmit = e => { if (e.submitter?.value !== 'cancel') e.preventDefault(); };
 }
@@ -478,8 +582,9 @@ setStatus('Modalità temporanea. Esporta un backup.', true);
   }
   toolSizes = restoreToolSizes(library.writing); size = brushSize(tool, toolSizes);
   penTraining = new PenTrainingUI({ getTuning: penTuning, onStart: beginTraining, onTrial: changeTrainingTrial, onExit: leaveTraining, onKeep: tuning => { trainingLibrary.writing = { ...trainingLibrary.writing, penTuning: normalizePenTuning(tuning) }; trainingConfigChanged = true; }, onReset: tuning => { trainingLibrary.writing = { ...trainingLibrary.writing, penTuning: normalizePenTuning(tuning) }; trainingConfigChanged = true; }, notify: toast });
-  setupCanvases(); renderColors(); renderAll(); bindEvents();
+  renderColors(); renderAll(); bindEvents();
   if (storageReady) { dirty = true; void flushSave(); navigator.storage?.persist?.().catch(() => {}); }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => toast('Modalità offline non disponibile. Il quaderno resta utilizzabile online.'));
 }
 void init();
+
