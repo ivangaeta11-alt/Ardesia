@@ -31,6 +31,12 @@ let trainingMode = false, trainingLibrary = null, trainingTuning = DEFAULT_PEN_T
 const book = () => library.books.find(item => item.id === library.activeBook);
 const page = () => book().pages.find(item => item.id === library.activePage);
 const activePaperWidth = () => pageSurfaces.get(activeSurfaceId)?.slot.querySelector('.paper-wrap').getBoundingClientRect().width || PAGE_W;
+function pageDisplayWidth() {
+  const smallScreen = innerWidth <= 1024;
+  const margin = smallScreen ? 16 : document.body.classList.contains('focus-mode') ? 48 : innerWidth <= 900 ? 44 : innerWidth <= 1200 ? 60 : 96;
+  const available = Math.max(200, $('stage').clientWidth - margin);
+  return fit ? Math.min(PAGE_W, available) : PAGE_W * zoom;
+}
 const penTuning = () => trainingMode ? trainingTuning : normalizePenTuning(library?.writing?.penTuning || DEFAULT_PEN_TUNING);
 const setStatus = (text, error = false) => { $('save-status').innerHTML = `<span class="status-dot" style="background:${error ? '#b66b55' : '#75a586'}"></span>${esc(text)}`; $('save-status').title = text; };
 function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false; toastTimer = setTimeout(() => $('toast').hidden = true, 4200); }
@@ -177,10 +183,7 @@ function renderAll() {
   renderBooks(); renderPages(); renderPageStack(); resizePage(); renderPaper();
 }
 function resizePage(deferRaster = false) {
-  const smallScreen = innerWidth <= 1024;
-  const margin = smallScreen ? 16 : document.body.classList.contains('focus-mode') ? 48 : innerWidth <= 900 ? 44 : innerWidth <= 1200 ? 60 : 96;
-  const available = Math.max(200, $('stage').clientWidth - margin);
-  const width = fit ? Math.min(PAGE_W, available) : PAGE_W * zoom;
+  const width = pageDisplayWidth();
   if (gesture && Math.abs(gesture.rect.width - width) > .5) endGesture();
   document.querySelectorAll('#page-stack .paper-wrap').forEach(el => { el.style.width = `${width}px`; el.style.maxWidth = 'none'; });
   document.querySelectorAll('#page-stack .page-meta').forEach(el => { el.style.width = `${width}px`; el.style.maxWidth = 'none'; });
@@ -447,7 +450,7 @@ function appendPage(automatic = false) {
   // New sheets must inherit the current viewport zoom immediately. Otherwise
   // an automatically appended sheet briefly uses the CSS fallback width until
   // the next resize or zoom event.
-  const width = activePaperWidth();
+  const width = pageDisplayWidth();
   surface.slot.querySelector('.paper-wrap').style.width = `${width}px`;
   surface.slot.querySelector('.page-meta').style.width = `${width}px`;
   surface.slot.querySelector('.page-meta').style.maxWidth = 'none';
