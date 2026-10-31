@@ -17,6 +17,8 @@ let library, tool = 'pen', color = COLORS[0], size = 2, zoom = 1, fit = true;
 const smoothing = 'natural';
 let toolSizes = restoreToolSizes(), toolCursor, sizePicker;
 let gesture = null, activeStroke = null, frame = 0, saving = false, dirty = false, saveTimer, thumbnailTimer, toastTimer, installEvent;
+const touchPointers = new Map();
+let pinchZoom = null;
 let storageReady = false, revision = 0, raster = canvasResolution(PAGE_W, devicePixelRatio, PAGE_W, PAGE_H), textPosition, zoomRasterTimer;
 // Keep both layers in the browser's normal compositor. A desynchronized,
 // transparent overlay can be presented as black by some Windows GPU paths.
@@ -104,7 +106,9 @@ function renderAll() {
   renderBooks(); renderPages(); renderPaper(); resizePage();
 }
 function resizePage(deferRaster = false) {
-  const available = Math.max(200, $('stage').clientWidth - (innerWidth <= 700 ? 16 : innerWidth <= 900 ? 44 : innerWidth <= 1200 ? 60 : 96));
+  const smallScreen = innerWidth <= 700;
+  const margin = smallScreen ? 16 : document.body.classList.contains('focus-mode') ? 48 : innerWidth <= 900 ? 44 : innerWidth <= 1200 ? 60 : 96;
+  const available = Math.max(200, $('stage').clientWidth - margin);
   const width = fit ? Math.min(PAGE_W, available) : PAGE_W * zoom;
   if (gesture && Math.abs(gesture.rect.width - width) > .5) endGesture();
   $('paper-wrap').style.width = `${width}px`; $('paper-wrap').style.maxWidth = 'none';
@@ -298,6 +302,66 @@ function helpDialog() {
 }
 function undoRedo(direction) { endGesture(); if (history.move(page(), direction)) { renderPaper(); updateThumb(); changed(); } }
 function setZoom(delta) { endGesture(); const current = $('paper-wrap').getBoundingClientRect().width / PAGE_W; fit = false; zoom = Math.max(.25, Math.min(2.5, Math.round((current + delta) * 100) / 100)); resizePage(true); }
+function cancelTouchGestureForPinch() {
+  if (!gesture || gesture.pointerType !== 'touch') return;
+  const old = gesture; gesture = null; clearTimeout(old.previewTimer);
+  if (drawing.hasPointerCapture(old.pointerId)) drawing.releasePointerCapture(old.pointerId);
+  if (activeStroke) { activeStroke = null; renderLive(); }
+  if (old.type === 'eraser' && old.modified) {
+    history.move(page(), 'undo'); renderPaper(); updateThumb(); updatePageInfo(); changed();
+  }
+}
+function touchDistance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function startPinch(e) {
+  if (e.pointerType !== 'touch') return;
+  touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinchZoom) {
+    pinchZoom.pointerIds.add(e.pointerId);
+    if (drawing.setPointerCapture) drawing.setPointerCapture(e.pointerId);
+    e.preventDefault(); e.stopImmediatePropagation(); return;
+  }
+  if (touchPointers.size < 2) return;
+  const ids = [...touchPointers.keys()].slice(0, 2), [a, b] = ids.map(id => touchPointers.get(id));
+  cancelTouchGestureForPinch();
+  pinchZoom = { ids, pointerIds: new Set(touchPointers.keys()), distance: Math.max(1, touchDistance(a, b)), width: $('paper-wrap').getBoundingClientRect().width };
+  if (drawing.setPointerCapture) drawing.setPointerCapture(e.pointerId);
+  e.preventDefault(); e.stopImmediatePropagation();
+}
+function movePinch(e) {
+  const point = touchPointers.get(e.pointerId);
+  if (!point) return;
+  point.x = e.clientX; point.y = e.clientY;
+  if (!pinchZoom || !pinchZoom.pointerIds.has(e.pointerId)) return;
+  const [a, b] = pinchZoom.ids.map(id => touchPointers.get(id));
+  if (!a || !b) return;
+  const next = Math.max(.25, Math.min(2.5, pinchZoom.width / PAGE_W * touchDistance(a, b) / pinchZoom.distance));
+  fit = false; zoom = Math.round(next * 1000) / 1000; resizePage(true);
+  e.preventDefault(); e.stopImmediatePropagation();
+}
+function endPinchPointer(e) {
+  if (!touchPointers.has(e.pointerId)) return;
+  touchPointers.delete(e.pointerId);
+  if (!pinchZoom) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const ids = [...touchPointers.keys()].slice(0, 2);
+  if (ids.length < 2) { pinchZoom = null; return; }
+  if (!pinchZoom.ids.every(id => touchPointers.has(id))) {
+    const [a, b] = ids.map(id => touchPointers.get(id));
+    pinchZoom = { ids, pointerIds: new Set(touchPointers.keys()), distance: Math.max(1, touchDistance(a, b)), width: $('paper-wrap').getBoundingClientRect().width };
+  }
+}
+function setFocusMode(open) {
+  document.body.classList.toggle('focus-mode', open);
+  document.body.classList.remove('focus-tools-hidden');
+  $('toggle-tools').hidden = !open;
+  $('toggle-tools').setAttribute('aria-pressed', 'false');
+  $('toggle-tools').setAttribute('aria-label', 'Nascondi strumenti');
+  $('fullscreen').setAttribute('aria-pressed', String(open));
+  $('fullscreen').setAttribute('aria-label', open ? 'Esci dalla lavagna a tutto schermo' : 'Lavagna a tutto schermo');
+  $('fullscreen').title = open ? 'Esci dalla lavagna a tutto schermo' : 'Lavagna a tutto schermo';
+  $('fullscreen').querySelector('use').setAttribute('href', open ? '#i-collapse' : '#i-expand');
+  requestAnimationFrame(() => { resizePage(); toolCursor?.refreshGeometry(); });
+}
 function bindEvents() {
   $('books').onclick = e => { const button = e.target.closest('[data-book]'); if (button) selectBook(button.dataset.book); };
   $('pages').onclick = e => { const button = e.target.closest('[data-page]'); if (button) selectPage(button.dataset.page); };
@@ -328,8 +392,27 @@ function bindEvents() {
   $('help').onclick = helpDialog; $('toggle-sidebar').onclick = () => setSidebarOpen(!$('sidebar').classList.contains('open'));
   $('sidebar-backdrop').onclick = () => setSidebarOpen(false);
   $('stage').addEventListener('click', () => setSidebarOpen(false));
+  $('stage').addEventListener('pointerdown', startPinch, { capture: true });
+  $('stage').addEventListener('pointermove', movePinch, { capture: true });
+  $('stage').addEventListener('pointerup', endPinchPointer, { capture: true });
+  $('stage').addEventListener('pointercancel', endPinchPointer, { capture: true });
   $('zoom-out').onclick = () => setZoom(-.1); $('zoom-in').onclick = () => setZoom(.1); $('zoom-fit').onclick = () => { endGesture(); fit = true; resizePage(); };
-  $('fullscreen').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { toast('Schermo intero non disponibile in questa finestra.'); } };
+  $('fullscreen').onclick = async () => {
+    const entering = !document.body.classList.contains('focus-mode');
+    setFocusMode(entering);
+    try {
+      if (entering && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      else if (!entering && document.fullscreenElement) await document.exitFullscreen();
+    } catch { /* La modalità lavagna resta disponibile anche senza fullscreen nativo. */ }
+  };
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('focus-mode')) setFocusMode(false); });
+  $('toggle-tools').onclick = () => {
+    const hidden = !document.body.classList.contains('focus-tools-hidden');
+    document.body.classList.toggle('focus-tools-hidden', hidden);
+    $('toggle-tools').setAttribute('aria-pressed', String(hidden));
+    $('toggle-tools').setAttribute('aria-label', hidden ? 'Mostra strumenti' : 'Nascondi strumenti');
+    requestAnimationFrame(() => resizePage());
+  };
   $('stage').addEventListener('wheel', e => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(e.deltaY > 0 ? -.05 : .05); } }, { passive: false });
   document.addEventListener('keydown', e => {
     if ($('dialog').open || $('pen-training-dialog').open || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
@@ -359,9 +442,23 @@ toast('Ripristino della visualizzazione');
   installPerfPanel();
   $('dialog-form').onsubmit = e => { if (e.submitter?.value !== 'cancel') e.preventDefault(); };
 }
+const standaloneMode = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const touchDevice = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+if (touchDevice && !standaloneMode) $('install').hidden = false;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; $('install').hidden = false; });
-$('install').onclick = async () => { if (installEvent) { await installEvent.prompt(); const choice = await installEvent.userChoice; if (choice.outcome === 'accepted') $('install').hidden = true; installEvent = null; } };
-window.addEventListener('appinstalled', () => { $('install').hidden = true; toast('Ardesia è installata. Buona scrittura.'); });
+$('install').onclick = async () => {
+  if (installEvent) {
+    const promptEvent = installEvent; installEvent = null; await promptEvent.prompt();
+    const choice = await promptEvent.userChoice; if (choice.outcome === 'accepted') $('install').hidden = true;
+    return;
+  }
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const instruction = ios
+    ? 'In Safari, apri Condividi e scegli Aggiungi alla schermata Home.'
+    : 'Apri il menu del browser e scegli Installa app o Aggiungi alla schermata Home.';
+  openDialog(`<h2>Installa Ardesia</h2><p>${instruction}</p><div class="dialog-actions"><button class="primary" value="cancel">Chiudi</button></div>`);
+};
+window.addEventListener('appinstalled', () => { $('install').hidden = true; toast('Ardesia è installata.'); });
 async function acquireEditor() {
   if (!navigator.locks) return;
   await new Promise((resolve, reject) => {

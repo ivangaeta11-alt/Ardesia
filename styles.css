@@ -146,7 +146,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .breadcrumb{display:none}
   .document-identity>input{font-size:17px;line-height:1.2}
   .header-actions{flex:0 0 auto;gap:2px}
-  #save-status,#install{display:none!important}
+  #save-status{display:none!important}
+  #install:not([hidden]){display:inline-flex!important;font-size:9px;padding:6px 8px;gap:4px;white-space:nowrap}
+  .install-button svg{width:14px;height:14px}
   .export-button{width:34px;height:34px;justify-content:center;padding:0}
   .export-button span{display:none}
   #book-menu{width:32px;height:34px}
@@ -201,6 +203,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .mobile-menu{width:32px}
   .document-identity>input{font-size:16px}
   .header-actions{gap:0}
+  #install:not([hidden]){font-size:8px;padding:5px 5px;gap:3px}
+  .install-button svg{width:13px;height:13px}
   #book-menu{width:28px}
   .status-bar{padding-left:5px;padding-right:5px}
   #tool-status{max-width:92px}
@@ -215,4 +219,28 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .status-bar{height:38px;min-height:38px}
   .pages-panel{padding-top:8px}
   .canvas-stage{padding-top:6px}
+}
+
+body.focus-mode{padding:0;height:100dvh;min-height:100svh;overflow:hidden;background:#fff}
+body.focus-mode .sidebar,body.focus-mode .document-header,body.focus-mode .pages-panel{display:none!important}
+body.focus-mode .workspace{width:100vw;height:100dvh;min-height:0;border:0;border-radius:0}
+body.focus-mode .writing-toolbar{height:48px;min-height:48px;max-height:48px;padding:4px 10px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;z-index:5}
+body.focus-mode .writing-toolbar::-webkit-scrollbar{display:none}
+body.focus-mode .toolbar-group{height:40px;padding-left:7px;padding-right:7px}
+body.focus-mode .tool{width:38px;min-width:38px;height:40px}
+body.focus-mode .colors{gap:7px}
+body.focus-mode .color{width:21px;height:21px}
+body.focus-mode .training-open,body.focus-mode .pen-mode{display:none}
+body.focus-mode .editor-body{flex:1;min-height:0}
+body.focus-mode .canvas-stage{padding:12px 24px 20px}
+body.focus-mode .status-bar{height:44px;min-height:44px}
+body.focus-mode.focus-tools-hidden .writing-toolbar{display:none}
+@media(max-width:700px){
+  body.focus-mode .writing-toolbar{padding:4px 6px}
+  body.focus-mode .toolbar-group{padding-left:5px;padding-right:5px}
+  body.focus-mode .tool{width:36px;min-width:36px}
+  body.focus-mode .canvas-stage{padding:8px 8px calc(14px + env(safe-area-inset-bottom))}
+  body.focus-mode .status-bar{height:calc(42px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom)}
+  body.focus-mode.focus-tools-hidden .status-bar{height:calc(48px + env(safe-area-inset-bottom));min-height:48px}
+  body.focus-mode #toggle-tools{background:#f5f2ff;border:1px solid #e5e0f5;border-radius:7px}
 }
