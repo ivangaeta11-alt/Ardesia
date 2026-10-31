@@ -25,6 +25,7 @@ let storageReady = false, revision = 0, raster = canvasResolution(PAGE_W, device
 let ink, drawing, selectionCanvas, ctx, live, liveRenderer, activeSurfaceId = null, pageObserver = null, eventsBound = false, lastPageScrollTop = 0, autoPagePending = false;
 const pageSurfaces = new Map();
 let selection = new Set(), selectionRenderFrame = 0;
+let inkClipboard = [], clipboardPasteCount = 0, lastPagePointer = null;
 const rawInput = 'onpointerrawupdate' in window;
 let lastLivePaint = -Infinity;
 let penTraining;
@@ -172,6 +173,20 @@ function objectBounds(object) {
     left: left - pad, top: top - pad, right: right + pad, bottom: bottom + pad
   };
 }
+function selectionBounds(objects = [...selection]) {
+  const bounds = objects.map(objectBounds).filter(Boolean);
+  if (!bounds.length) return null;
+  return { left: Math.min(...bounds.map(b => b.left)), top: Math.min(...bounds.map(b => b.top)), right: Math.max(...bounds.map(b => b.right)), bottom: Math.max(...bounds.map(b => b.bottom)) };
+}
+function selectionHandles(bounds) {
+  if (!bounds) return [];
+  return [
+    { id: 'nw', x: bounds.left, y: bounds.top, anchor: { x: bounds.right, y: bounds.bottom } },
+    { id: 'ne', x: bounds.right, y: bounds.top, anchor: { x: bounds.left, y: bounds.bottom } },
+    { id: 'se', x: bounds.right, y: bounds.bottom, anchor: { x: bounds.left, y: bounds.top } },
+    { id: 'sw', x: bounds.left, y: bounds.bottom, anchor: { x: bounds.right, y: bounds.top } }
+  ];
+}
 function renderSelection() {
   if (!selectionCanvas) return;
   const c = selectionCanvas.getContext('2d');
@@ -183,6 +198,15 @@ function renderSelection() {
     c.fillRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
     c.strokeRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
   }
+  const frame = selectionBounds();
+  if (frame) {
+    c.setLineDash([]); c.lineWidth = 1.4 / viewScale; c.strokeStyle = '#7049ed'; c.strokeRect(frame.left, frame.top, frame.right - frame.left, frame.bottom - frame.top);
+    const handleSize = 8 / viewScale;
+    for (const handle of selectionHandles(frame)) {
+      c.fillStyle = '#fff'; c.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+      c.strokeStyle = '#7049ed'; c.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+    }
+  }
   if (gesture?.type === 'select' && gesture.selectionMode === 'marquee' && gesture.current) {
     const a = gesture.start, b = gesture.current, left = Math.min(a.x, b.x), top = Math.min(a.y, b.y), width = Math.abs(a.x - b.x), height = Math.abs(a.y - b.y);
     c.setLineDash([3 / viewScale, 2 / viewScale]); c.fillStyle = '#7049ed20'; c.fillRect(left, top, width, height); c.strokeRect(left, top, width, height);
@@ -193,6 +217,8 @@ function updateSelectionUI() {
   const bar = $('selection-actions'); if (!bar) return;
   bar.hidden = selection.size === 0;
   $('selection-count').textContent = `${selection.size} ${selection.size === 1 ? 'tratto selezionato' : 'tratti selezionati'}`;
+  const textSelection = selection.size === 1 && [...selection][0].type === 'text';
+  const edit = $('selection-edit-text'); if (edit) edit.hidden = !textSelection;
 }
 function translateObject(object, dx, dy) {
   if (object.type === 'text') { object.x += dx; object.y += dy; return; }
@@ -205,6 +231,9 @@ function translateObject(object, dx, dy) {
 function selectionAction(action, value) {
   if (!selection.size) return;
   if (action === 'clear') { selection.clear(); renderSelection(); return; }
+  if (action === 'edit-text') { const object = selection.size === 1 ? [...selection][0] : null; if (object?.type === 'text') textDialog(object); return; }
+  if (action === 'copy') { copySelection(); return; }
+  if (action === 'cut') { cutSelection(); return; }
   history.push(page());
   if (action === 'delete') { page().objects = page().objects.filter(object => !selection.has(object)); selection.clear(); }
   if (action === 'color') for (const object of selection) object.color = value;
@@ -214,6 +243,53 @@ function selectionAction(action, value) {
   }
   renderPaper(); updateThumb(); updateHistory(); changed();
 }
+function copySelection() {
+  if (!selection.size) return false;
+  inkClipboard = clone([...selection]); clipboardPasteCount = 0; return true;
+}
+function cutSelection() {
+  if (!copySelection()) return false;
+  history.push(page()); page().objects = page().objects.filter(object => !selection.has(object)); selection.clear();
+  renderPaper(); updateThumb(); updateHistory(); changed(); return true;
+}
+function pasteSelection() {
+  if (!inkClipboard.length) return false;
+  const copies = clone(inkClipboard), bounds = selectionBounds(copies);
+  const target = lastPagePointer?.pageId === page().id ? lastPagePointer : { x: PAGE_W / 2, y: PAGE_H / 2 };
+  const offset = clipboardPasteCount++ * 8;
+  const dx = target.x - bounds.left + offset, dy = target.y - bounds.top + offset;
+  copies.forEach(object => translateObject(object, dx, dy));
+  history.push(page()); page().objects.push(...copies); selection = new Set(copies);
+  if (tool !== 'select') setTool('select');
+  renderPaper(); updateThumb(); updateHistory(); changed(); return true;
+}
+function scaleObject(object, anchor, factor) {
+  if (object.type === 'text') {
+    object.x = anchor.x + (object.x - anchor.x) * factor; object.y = anchor.y + (object.y - anchor.y) * factor; object.size *= factor; return;
+  }
+  const scalePoints = points => points?.map(p => ({ ...p, x: anchor.x + (p.x - anchor.x) * factor, y: anchor.y + (p.y - anchor.y) * factor }));
+  object.points = scalePoints(object.points); if (object.rawPoints) object.rawPoints = scalePoints(object.rawPoints); object.size *= factor;
+}
+function showInkContextMenu(event, surface) {
+  if (tool !== 'select') return;
+  if (surface.id !== activeSurfaceId) selectPage(surface.id, false);
+  const rect = surface.drawing.getBoundingClientRect();
+  const at = { x: Math.max(0, Math.min(PAGE_W, (event.clientX - rect.left) / rect.width * PAGE_W)), y: Math.max(0, Math.min(PAGE_H, (event.clientY - rect.top) / rect.height * PAGE_H)) };
+  lastPagePointer = { ...at, pageId: surface.id };
+  const hit = [...page().objects].reverse().find(object => hitsObject(object, at, at, 7 / Math.max(.01, rect.width / PAGE_W)));
+  if (hit && !selection.has(hit)) selection = new Set([hit]);
+  renderSelection();
+  const menu = $('ink-context-menu'), selectedText = selection.size === 1 && [...selection][0].type === 'text';
+  menu.querySelector('[data-ink-action="copy"]').disabled = !selection.size;
+  menu.querySelector('[data-ink-action="cut"]').disabled = !selection.size;
+  menu.querySelector('[data-ink-action="delete"]').disabled = !selection.size;
+  menu.querySelector('[data-ink-action="edit-text"]').hidden = !selectedText;
+  menu.querySelector('[data-ink-action="paste"]').disabled = !inkClipboard.length;
+  menu.hidden = false;
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - menu.offsetHeight - 8))}px`;
+}
+function closeInkContextMenu() { $('ink-context-menu').hidden = true; }
 function renderLive() {
   const preview = gesture?.pointerType === 'pen' && activeStroke?.type === 'pen' ? gesture.preview.points(activeStroke.points.at(-1), performance.now()) : [];
   liveRenderer.render(activeStroke, preview);
@@ -291,15 +367,22 @@ function pointerDown(e) {
   if (gesture) return;
   if (e.pointerType === 'touch' && (e.width > 35 || e.height > 35)) return;
   e.preventDefault(); drawing.setPointerCapture(e.pointerId);
-  const move = tool === 'hand' || (e.pointerType === 'touch' && $('pen-only').checked);
-  const eraseMode = tool === 'eraser' || e.button === 5 || (e.buttons & 32) !== 0 || (e.pointerType === 'pen' && (e.buttons & 2) !== 0);
   const rect = drawing.getBoundingClientRect();
+  const at = { x: Math.max(0, Math.min(PAGE_W, (e.clientX - rect.left) / rect.width * PAGE_W)), y: Math.max(0, Math.min(PAGE_H, (e.clientY - rect.top) / rect.height * PAGE_H)) };
+  const textHit = tool === 'text' ? [...page().objects].reverse().find(object => object.type === 'text' && hitsObject(object, at, at, 7 / Math.max(.01, rect.width / PAGE_W))) : null;
+  const move = tool === 'hand' || (e.pointerType === 'touch' && $('pen-only').checked && !textHit);
+  const eraseMode = tool === 'eraser' || e.button === 5 || (e.buttons & 32) !== 0 || (e.pointerType === 'pen' && (e.buttons & 2) !== 0);
   gesture = { pointerId: e.pointerId, pointerType: e.pointerType, type: move ? 'hand' : eraseMode ? 'eraser' : tool, last: point(e), rect, startX: e.clientX, startY: e.clientY, scrollX: $('stage').scrollLeft, scrollY: $('stage').scrollTop, modified: false };
   if (move) return;
-  if (tool === 'text' && !eraseMode) { textPosition = point(e); endGesture(); textDialog(); return; }
+  if (tool === 'text' && !eraseMode) { textPosition = point(e); endGesture(); textDialog(textHit); return; }
   if (eraseMode) { erase(gesture.last, gesture.last); return; }
   if (tool === 'select') {
     const at = gesture.last, radius = 7 / Math.max(.01, rect.width / PAGE_W);
+    const frame = selectionBounds(), handle = selectionHandles(frame).find(item => Math.hypot(item.x - at.x, item.y - at.y) <= 10 / Math.max(.01, rect.width / PAGE_W));
+    if (handle && selection.size) {
+      gesture.selectionMode = 'resize'; gesture.selected = [...selection]; gesture.resizeAnchor = handle.anchor;
+      gesture.resizeVector = { x: handle.x - handle.anchor.x, y: handle.y - handle.anchor.y }; gesture.lastFactor = 1; return;
+    }
     const hit = [...page().objects].reverse().find(object => hitsObject(object, at, at, radius));
     if (hit) {
       if (!selection.has(hit)) selection = new Set([hit]);
@@ -333,6 +416,14 @@ function pointerMove(e, final = false) {
         }
         renderSelection();
       } else renderSelection();
+    } else if (gesture.selectionMode === 'resize') {
+      const vector = { x: p.x - gesture.resizeAnchor.x, y: p.y - gesture.resizeAnchor.y }, initial = gesture.resizeVector;
+      const factor = Math.max(.1, Math.min(8, (vector.x * initial.x + vector.y * initial.y) / Math.max(1, initial.x * initial.x + initial.y * initial.y)));
+      if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) >= 3 && Math.abs(factor - gesture.lastFactor) > .002) {
+        if (!gesture.moved) { history.push(page()); gesture.moved = true; }
+        const step = factor / gesture.lastFactor; gesture.selected.forEach(object => scaleObject(object, gesture.resizeAnchor, step)); gesture.lastFactor = factor;
+        if (!selectionRenderFrame) selectionRenderFrame = requestAnimationFrame(() => { selectionRenderFrame = 0; renderPaper(); });
+      }
     } else if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) >= 3) {
       if (!gesture.moved) { history.push(page()); gesture.moved = true; }
       const dx = p.x - gesture.last.x, dy = p.y - gesture.last.y;
@@ -427,9 +518,17 @@ function newBookDialog() {
   const create = () => { const title = $('new-title').value.trim(); if (!title) { $('new-title').reportValidity(); return; } const item = newNotebook(title, cover); library.books.push(item); closeDialog(); selectBook(item.id); toast('Quaderno creato.'); };
   $('create-book').onclick = create; $('new-title').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); create(); } }; $('new-title').focus();
 }
-function textDialog() {
-openDialog(`<h2>Inserisci testo</h2><label class="field">Testo<textarea id="note-text" maxlength="10000" placeholder="Testo della nota" autofocus></textarea></label><label class="field">Dimensione<select id="text-size"><option value="16">Piccola (16)</option><option value="24" selected>Media (24)</option><option value="36">Grande (36)</option><option value="48">Titolo (48)</option></select></label><div class="dialog-actions"><button class="button" value="cancel">Annulla</button><button type="button" class="primary" id="add-text">Inserisci nota</button></div>`);
-  $('add-text').onclick = () => { const text = $('note-text').value.trim(); if (!text) return; history.push(page()); page().objects.push({ type: 'text', x: textPosition.x, y: textPosition.y, text, size: Number($('text-size').value), color }); renderPaper(); updateThumb(); changed(); closeDialog(); }; $('note-text').focus();
+function textDialog(existing = null) {
+  const editing = Boolean(existing), initialSize = existing?.size ?? 24, initialColor = existing?.color || color;
+  openDialog(`<h2>${editing ? 'Modifica testo' : 'Inserisci testo'}</h2><label class="field">Testo<textarea id="note-text" maxlength="10000" placeholder="Testo della nota" autofocus>${esc(existing?.text || '')}</textarea></label><label class="field">Dimensione<input id="text-size" type="number" min="8" max="144" step="1" value="${initialSize}"></label><label class="field">Colore<input id="text-color" type="color" value="${initialColor}"></label><div class="dialog-actions"><button class="button" value="cancel">Annulla</button><button type="button" class="primary" id="add-text">${editing ? 'Salva modifiche' : 'Inserisci nota'}</button></div>`);
+  $('add-text').onclick = () => {
+    const text = $('note-text').value.trim(), nextSize = Math.max(8, Math.min(144, Number($('text-size').value) || initialSize)), nextColor = $('text-color').value;
+    if (!text) return;
+    history.push(page());
+    if (editing) { existing.text = text; existing.size = nextSize; existing.color = nextColor; selection = new Set([existing]); }
+    else page().objects.push({ type: 'text', x: textPosition.x, y: textPosition.y, text, size: nextSize, color: nextColor });
+    renderPaper(); updateThumb(); changed(); closeDialog();
+  }; $('note-text').focus();
 }
 function confirmDialog(title, description, action, label = 'Elimina') { openDialog(`<h2>${esc(title)}</h2><p>${esc(description)}</p><div class="dialog-actions"><button class="button" value="cancel">Annulla</button><button type="button" class="primary" id="confirm-action">${esc(label)}</button></div>`); $('confirm-action').onclick = () => { action(); closeDialog(); }; }
 function menuDialog(title, actions) { openDialog(`<h2>${esc(title)}</h2>${actions.map((item, i) => `<button type="button" class="action-row ${item.danger ? 'danger' : ''}" data-action="${i}">${icon(item.icon)}<div><span>${esc(item.label)}</span><small>${esc(item.description)}</small></div></button>`).join('')}`); $('dialog-content').querySelectorAll('[data-action]').forEach(button => button.onclick = () => { closeDialog(); actions[Number(button.dataset.action)].run(); }); }
@@ -585,11 +684,36 @@ function bindDrawingCanvas(surface) {
   canvas.addEventListener('pointerup', e => { if (gesture?.pointerId === e.pointerId) { pointerMove(e, true); endGesture(); } });
   canvas.addEventListener('pointercancel', e => { if (gesture?.pointerId === e.pointerId) endGesture(); });
   canvas.addEventListener('lostpointercapture', e => { if (gesture?.pointerId === e.pointerId) endGesture(); });
-  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('contextmenu', e => { e.preventDefault(); showInkContextMenu(e, surface); });
+  canvas.addEventListener('dblclick', e => {
+    if (tool !== 'select') return;
+    const rect = canvas.getBoundingClientRect(), at = { x: (e.clientX - rect.left) / rect.width * PAGE_W, y: (e.clientY - rect.top) / rect.height * PAGE_H };
+    const object = [...page().objects].reverse().find(item => item.type === 'text' && hitsObject(item, at, at, 7 / Math.max(.01, rect.width / PAGE_W)));
+    if (object) { e.preventDefault(); selection = new Set([object]); renderSelection(); textDialog(object); }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (gesture || surface.id !== activeSurfaceId) return;
+    const rect = canvas.getBoundingClientRect(), scale = Math.max(.01, rect.width / PAGE_W);
+    lastPagePointer = { x: Math.max(0, Math.min(PAGE_W, (e.clientX - rect.left) / rect.width * PAGE_W)), y: Math.max(0, Math.min(PAGE_H, (e.clientY - rect.top) / rect.height * PAGE_H)), pageId: surface.id };
+    if (tool === 'select') {
+      const frame = selectionBounds(), handle = selectionHandles(frame).find(item => Math.hypot(item.x - lastPagePointer.x, item.y - lastPagePointer.y) <= 10 / scale);
+      canvas.style.cursor = handle ? (handle.id === 'nw' || handle.id === 'se' ? 'nwse-resize' : 'nesw-resize') : 'default';
+    } else canvas.style.cursor = '';
+  });
 }
 function bindEvents() {
   eventsBound = true;
   for (const surface of pageSurfaces.values()) { bindDrawingCanvas(surface); watchSurfaceContexts(surface); }
+  $('ink-context-menu').addEventListener('click', e => {
+    const button = e.target.closest('[data-ink-action]'); if (!button || button.disabled) return;
+    const action = button.dataset.inkAction; closeInkContextMenu();
+    if (action === 'copy') copySelection();
+    else if (action === 'cut') cutSelection();
+    else if (action === 'paste') pasteSelection();
+    else if (action === 'delete') selectionAction('delete');
+    else if (action === 'edit-text') selectionAction('edit-text');
+  });
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#ink-context-menu')) closeInkContextMenu(); }, true);
   $('books').onclick = e => { const button = e.target.closest('[data-book]'); if (button) selectBook(button.dataset.book); };
   $('pages').onclick = e => { const button = e.target.closest('[data-page]'); if (button) selectPage(button.dataset.page); };
   $('search').oninput = renderBooks; $('new-book').onclick = newBookDialog;
@@ -632,8 +756,15 @@ function bindEvents() {
   document.addEventListener('keydown', e => {
     if ($('dialog').open || $('pen-training-dialog').open || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     const key = e.key.toLowerCase();
+    if (key === 'escape' && !$('ink-context-menu').hidden) { closeInkContextMenu(); return; }
     if ((key === 'delete' || key === 'backspace') && selection.size && tool === 'select') { e.preventDefault(); selectionAction('delete'); return; }
-    if (e.ctrlKey || e.metaKey) { if (['z', 'y', 's'].includes(key)) { e.preventDefault(); if (key === 'z') undoRedo(e.shiftKey ? 'redo' : 'undo'); if (key === 'y') undoRedo('redo'); if (key === 's') { endGesture(); void flushSave(); } } return; }
+    if (e.ctrlKey || e.metaKey) {
+      if (key === 'c' && copySelection()) { e.preventDefault(); return; }
+      if (key === 'x' && selection.size) { e.preventDefault(); cutSelection(); return; }
+      if (key === 'v' && inkClipboard.length) { e.preventDefault(); pasteSelection(); return; }
+      if (['z', 'y', 's'].includes(key)) { e.preventDefault(); if (key === 'z') undoRedo(e.shiftKey ? 'redo' : 'undo'); if (key === 'y') undoRedo('redo'); if (key === 's') { endGesture(); void flushSave(); } }
+      return;
+    }
     const shortcuts = { p: 'pen', h: 'highlighter', e: 'eraser', t: 'text', l: 'line', r: 'rect', v: 'hand', s: 'select' }; if (shortcuts[key]) setTool(shortcuts[key]); if (e.key === '?') helpDialog();
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { endGesture(); void flushSave(); } else requestAnimationFrame(redrawCanvases); });
