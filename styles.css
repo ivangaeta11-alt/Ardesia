@@ -275,10 +275,8 @@ body.focus-mode.focus-tools-hidden .writing-toolbar{display:none}
 .ink-context-menu button:disabled{opacity:.4;cursor:default}
 @media(max-width:520px){.selection-actions{bottom:calc(48px + env(safe-area-inset-bottom));gap:3px;padding:5px}.selection-actions>span{font-size:9px;padding:0 4px}.selection-actions>button,.selection-color-control{padding:5px 6px;font-size:9px}}
 
-@media(min-width:1025px){
-  body{padding:0;background:#fff}
-  .sidebar,.workspace{height:100dvh;border-top:0;border-bottom:0;border-radius:0}
-  .sidebar{border-left:0}
-  .workspace{border-right:0}
-}
+body{padding:0;background:#fff}
+.sidebar,.workspace{height:100dvh;border-top:0;border-bottom:0;border-radius:0}
+.sidebar{border-left:0}
+.workspace{border-right:0}
 
