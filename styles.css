@@ -131,3 +131,88 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(max-width:1200px){.writing-toolbar{padding-left:10px;padding-right:10px}.toolbar-group{padding-left:6px;padding-right:6px}.tool{width:29px}.colors{gap:4px;padding-left:6px;padding-right:6px}.color{width:18px;height:18px}.size-control{padding-left:6px;padding-right:6px}#size-trigger{min-width:88px;padding-left:7px;padding-right:7px}.training-open{font-size:9px;padding:8px 7px}.pen-mode{padding-left:6px;font-size:9px}.history-tools{padding-left:4px;padding-right:4px}}
 @media(max-width:900px){.pages-panel{width:94px}.writing-toolbar{padding:8px}.toolbar-group{padding-left:4px;padding-right:4px}.tool{width:28px}.training-open{font-size:9px}.pen-mode{font-size:0}}
 @media print{body{padding:0;background:#fff}.sidebar,.workspace{height:auto;border:0;border-radius:0}}
+
+/* Compact document layout for phones and narrow tablets. */
+.sidebar-backdrop{display:none}
+@media(max-width:700px){
+  body{width:100%;min-width:0;height:100dvh;min-height:100svh;padding:0;overflow:hidden;background:#f3f1ff}
+  .sidebar,.workspace{height:100dvh;min-height:0;border-radius:0;border-top:0;border-bottom:0}
+  .sidebar{width:min(290px,86vw);padding:calc(18px + env(safe-area-inset-top)) 18px calc(14px + env(safe-area-inset-bottom));border:0;border-right:1px solid #e8e4f8;border-radius:0 20px 20px 0}
+  .sidebar-backdrop:not([hidden]){display:block;position:fixed;inset:0;z-index:19;background:#171a3c55;touch-action:manipulation}
+  .workspace{position:relative;flex:1;width:100%;min-width:0;max-width:100vw;overflow:hidden;border:0;background:#fff}
+  .document-header{height:60px;min-height:60px;padding:6px 8px;gap:5px}
+  .mobile-menu{display:inline-flex;width:36px;height:36px}
+  .document-identity{min-width:0}
+  .breadcrumb{display:none}
+  .document-identity>input{font-size:17px;line-height:1.2}
+  .header-actions{flex:0 0 auto;gap:2px}
+  #save-status,#install{display:none!important}
+  .export-button{width:34px;height:34px;justify-content:center;padding:0}
+  .export-button span{display:none}
+  #book-menu{width:32px;height:34px}
+  .writing-toolbar{width:100%;max-width:100%;min-width:0;min-height:54px;height:54px;max-height:58px;flex:0 0 auto;justify-content:flex-start;gap:0;padding:5px 6px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .writing-toolbar::-webkit-scrollbar{display:none}
+  .toolbar-group{height:38px;padding:0 6px;gap:3px}
+  .toolbar-group:first-child{padding-left:0}
+  .tools{gap:1px}
+  .tool{width:35px;min-width:35px;height:38px}
+  .colors{gap:5px;padding:0 6px}
+  .color{width:20px;height:20px}
+  .size-control{padding:0 6px}
+  #size-trigger{min-width:82px;padding:6px 7px}
+  .training-open{font-size:10px;padding:7px 9px}
+  .pen-mode{margin-left:0;padding:0 8px;gap:6px;font-size:10px}
+  .editor-body{width:100%;min-width:0;flex:1;overflow:hidden}
+  .pages-panel{width:68px;min-width:68px;padding:12px 5px;overflow-x:hidden}
+  .pages-heading{font-size:7px;letter-spacing:.5px;margin-bottom:14px}
+  .page-item{gap:6px}
+  .page-item .thumb{width:48px;height:68px;padding:3px}
+  .add-page{width:48px;height:54px;margin-top:15px}
+  .add-page span{font-size:7px}
+  .canvas-stage{flex:1;width:0;min-width:0;padding:10px 8px calc(14px + env(safe-area-inset-bottom));overflow:auto;overscroll-behavior:contain}
+  .page-meta{min-height:24px;margin-bottom:7px;font-size:7px;letter-spacing:1px;gap:4px}
+  .page-meta>div{gap:3px;font-size:9px}
+  .page-meta select{max-width:84px;padding:4px 2px}
+  .page-meta .icon-button{width:24px;height:26px}
+  #paper-wrap{max-width:none}
+  .status-bar{height:calc(42px + env(safe-area-inset-bottom));min-height:42px;padding:0 8px env(safe-area-inset-bottom);gap:3px;font-size:8px}
+  .status-bar>div:first-child{min-width:0;overflow:hidden;gap:5px}
+  #tool-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px}
+  .footer-separator,#object-count{display:none}
+  .zoom-controls{gap:1px!important;flex:0 0 auto}
+  .zoom-controls .icon-button{width:34px;height:34px}
+  .zoom-controls output{min-width:34px}
+  #zoom-fit{font-size:10px;padding:0 4px}
+  #fullscreen{margin-left:2px;padding-left:4px;width:32px}
+  #toast{bottom:calc(50px + env(safe-area-inset-bottom));font-size:11px;padding:10px 14px}
+  .training-mode-bar{max-height:34dvh;overflow:auto;padding:7px 9px;gap:6px}
+  .training-mode-bar>div:first-child{min-width:0;width:100%}
+  .training-dialog{max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:16px}
+  .training-sheet{height:min(54dvh,520px);width:auto;aspect-ratio:397/561.5}
+  .size-panel{max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto}
+}
+@media(max-width:420px){
+  .pages-panel{width:58px;min-width:58px;padding-left:3px;padding-right:3px}
+  .pages-heading{font-size:6px;letter-spacing:0}
+  .page-item .thumb{width:40px;height:57px}
+  .add-page{width:42px;height:49px}
+  .add-page span{font-size:6px}
+  .document-header{padding-left:6px;padding-right:5px}
+  .mobile-menu{width:32px}
+  .document-identity>input{font-size:16px}
+  .header-actions{gap:0}
+  #book-menu{width:28px}
+  .status-bar{padding-left:5px;padding-right:5px}
+  #tool-status{max-width:92px}
+  .zoom-controls .icon-button{width:30px}
+  .zoom-controls output{min-width:29px}
+  #zoom-fit{padding:0 2px}
+  #fullscreen{width:27px;padding-left:2px}
+}
+@media(max-width:700px) and (max-height:560px){
+  .document-header{height:50px;min-height:50px}
+  .writing-toolbar{height:48px;min-height:48px}
+  .status-bar{height:38px;min-height:38px}
+  .pages-panel{padding-top:8px}
+  .canvas-stage{padding-top:6px}
+}

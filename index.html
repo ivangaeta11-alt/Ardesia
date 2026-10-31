@@ -42,9 +42,10 @@
       <span class="version">ARDESIA 1.15</span>
     </div>
   </aside>
+  <button class="sidebar-backdrop" id="sidebar-backdrop" aria-label="Chiudi la libreria" hidden></button>
   <main class="workspace">
     <header class="document-header">
-      <button class="icon-button mobile-menu" id="toggle-sidebar" aria-label="Apri o chiudi libreria"><svg><use href="#i-menu"/></svg></button>
+      <button class="icon-button mobile-menu" id="toggle-sidebar" aria-label="Apri o chiudi libreria" aria-expanded="false" aria-controls="sidebar"><svg><use href="#i-menu"/></svg></button>
       <div class="document-identity"><div class="breadcrumb">I miei quaderni <svg><use href="#i-chevron"/></svg><span id="breadcrumb-title">Il mio primo quaderno</span></div><input id="book-title" aria-label="Titolo del quaderno" maxlength="120" value="Il mio primo quaderno"></div>
       <div class="header-actions"><span id="save-status" role="status"><span class="status-dot"></span>Salvato sul dispositivo</span><button class="button" id="install" hidden>Installa app</button><button class="button export-button" id="export"><svg><use href="#i-download"/></svg><span>Esporta</span></button><button class="icon-button" id="book-menu" aria-label="Opzioni quaderno"><svg><use href="#i-more"/></svg></button></div>
     </header>

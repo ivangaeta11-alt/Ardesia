@@ -104,7 +104,7 @@ function renderAll() {
   renderBooks(); renderPages(); renderPaper(); resizePage();
 }
 function resizePage(deferRaster = false) {
-  const available = Math.max(200, $('stage').clientWidth - (innerWidth <= 700 ? 28 : innerWidth <= 900 ? 44 : innerWidth <= 1200 ? 60 : 96));
+  const available = Math.max(200, $('stage').clientWidth - (innerWidth <= 700 ? 16 : innerWidth <= 900 ? 44 : innerWidth <= 1200 ? 60 : 96));
   const width = fit ? Math.min(PAGE_W, available) : PAGE_W * zoom;
   if (gesture && Math.abs(gesture.rect.width - width) > .5) endGesture();
   $('paper-wrap').style.width = `${width}px`; $('paper-wrap').style.maxWidth = 'none';
@@ -119,7 +119,12 @@ function resizePage(deferRaster = false) {
   toolCursor?.refreshGeometry();
 }
 function selectPage(id) { endGesture(); library.activePage = id; renderPages(); renderPaper(); $('stage').scrollTop = 0; changed(); }
-function selectBook(id) { endGesture(); library.activeBook = id; library.activePage = book().pages[0].id; renderAll(); $('stage').scrollTop = 0; $('sidebar').classList.remove('open'); changed(); }
+function setSidebarOpen(open) {
+  $('sidebar').classList.toggle('open', open);
+  $('sidebar-backdrop').hidden = !open;
+  $('toggle-sidebar').setAttribute('aria-expanded', String(open));
+}
+function selectBook(id) { endGesture(); library.activeBook = id; library.activePage = book().pages[0].id; renderAll(); $('stage').scrollTop = 0; setSidebarOpen(false); changed(); }
 function setTool(next) {
   endGesture(); tool = next; size = brushSize(tool, toolSizes);
   document.querySelectorAll('[data-tool]').forEach(button => { const selected = button.dataset.tool === tool; button.classList.toggle('active', selected); button.setAttribute('aria-pressed', selected); });
@@ -320,8 +325,9 @@ function bindEvents() {
   drawing.addEventListener('contextmenu', e => e.preventDefault());
   $('export').onclick = exportDialog; $('book-menu').onclick = bookMenu; $('page-menu').onclick = pageMenu;
   $('import').onclick = () => $('import-file').click(); $('import-file').onchange = e => { void importFile(e.target.files[0]); e.target.value = ''; };
-  $('help').onclick = helpDialog; $('toggle-sidebar').onclick = () => $('sidebar').classList.toggle('open');
-  $('stage').addEventListener('click', () => $('sidebar').classList.remove('open'));
+  $('help').onclick = helpDialog; $('toggle-sidebar').onclick = () => setSidebarOpen(!$('sidebar').classList.contains('open'));
+  $('sidebar-backdrop').onclick = () => setSidebarOpen(false);
+  $('stage').addEventListener('click', () => setSidebarOpen(false));
   $('zoom-out').onclick = () => setZoom(-.1); $('zoom-in').onclick = () => setZoom(.1); $('zoom-fit').onclick = () => { endGesture(); fit = true; resizePage(); };
   $('fullscreen').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { toast('Schermo intero non disponibile in questa finestra.'); } };
   $('stage').addEventListener('wheel', e => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(e.deltaY > 0 ? -.05 : .05); } }, { passive: false });
