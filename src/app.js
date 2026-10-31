@@ -106,7 +106,7 @@ function renderAll() {
   renderBooks(); renderPages(); renderPaper(); resizePage();
 }
 function resizePage(deferRaster = false) {
-  const smallScreen = innerWidth <= 700;
+  const smallScreen = innerWidth <= 1024;
   const margin = smallScreen ? 16 : document.body.classList.contains('focus-mode') ? 48 : innerWidth <= 900 ? 44 : innerWidth <= 1200 ? 60 : 96;
   const available = Math.max(200, $('stage').clientWidth - margin);
   const width = fit ? Math.min(PAGE_W, available) : PAGE_W * zoom;
@@ -443,7 +443,7 @@ toast('Ripristino della visualizzazione');
   $('dialog-form').onsubmit = e => { if (e.submitter?.value !== 'cancel') e.preventDefault(); };
 }
 const standaloneMode = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-const touchDevice = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const touchDevice = matchMedia('(any-pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 if (touchDevice && !standaloneMode) $('install').hidden = false;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; $('install').hidden = false; });
 $('install').onclick = async () => {
